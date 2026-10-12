@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import ai  # noqa: E402
-from app.config import MAAS_BASE_URL, MAAS_MODEL, maas_ready  # noqa: E402
+from app.config import MAAS_BASE_URL, MAAS_MODEL, maas_mode, maas_ready, mock_active  # noqa: E402
 
 
 def main() -> int:
@@ -22,7 +22,18 @@ def main() -> int:
     print(f"  模型      : {MAAS_MODEL}")
     print(f"  接口地址  : {MAAS_BASE_URL}")
     print(f"  密钥      : {'已配置' if maas_ready() else '未配置'}")
+    print(f"  运行模式  : {maas_mode()}" + ("（当前走内置模拟诊断）" if mock_active() else "（当前走真实大模型）"))
     print("-" * 58)
+
+    if mock_active():
+        print("\n[i] 当前是模拟模式，不调用真实模型，无需 API Key。")
+        print("    想验证真实 MaaS 连通性，请先：")
+        print("    1. 把 .env 里的 MAAS_API_KEY 填成真实密钥")
+        print("    2. 把 MAAS_BASE_URL 换成控制台的真实地址（末尾只留到 /v1）")
+        print("    3. 确认 MAAS_MODE 为 auto 或 off")
+        print("\n[√] 现在就可以直接跑：uvicorn app.main:app --reload")
+        print("    然后打开 http://127.0.0.1:8000/ 点「巡检」和「AI 诊断」")
+        return 0
 
     if not maas_ready():
         print("\n[×] 还没配好。请检查：")

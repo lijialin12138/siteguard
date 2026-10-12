@@ -24,6 +24,9 @@
   .badge{padding:3px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink2);}
   .badge.ok{background:var(--ok-bg);color:var(--ok);border-color:#cfe6d6;}
   .badge.bad{background:var(--bad-bg);color:var(--bad);border-color:#f3cfcf;}
+  .badge.warn{background:var(--warn-bg);color:var(--warn);border-color:#f0e0bf;}
+  .mocknote{background:var(--warn-bg);border:1px solid #f0e0bf;color:var(--warn);
+    border-radius:8px;padding:8px 11px;font-size:12.5px;line-height:1.6;margin-bottom:10px;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:14px;}
   .card h2{font-size:14px;margin:0 0 12px;font-weight:700;}
   input{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);outline:none;}
@@ -68,6 +71,7 @@
   </header>
   <div class="bar">
     <span class="badge" id="maasBadge">MaaS：检测中…</span>
+    <span class="badge" id="aiModeBadge">AI：检测中…</span>
     <span class="badge" id="schedBadge">调度器：检测中…</span>
     <button onclick="pingMaas()">测试大模型连通性</button>
   </div>
@@ -108,6 +112,18 @@ async function loadStatus() {
     const b = $('maasBadge');
     b.textContent = 'MaaS：' + (s.maas_configured ? (s.maas_model + ' 已就绪') : '未配置');
     b.className = 'badge ' + (s.maas_configured ? 'ok' : 'bad');
+
+    const m = $('aiModeBadge');
+    if (s.mock_active) {
+      m.textContent = 'AI：模拟模式（内置诊断）';
+      m.className = 'badge warn';
+      m.title = 'MAAS_MODE=' + s.ai_mode + '：未接入真实大模型，结论由内置规则生成。正式提交前请配置 Key 并设为 off。';
+    } else {
+      m.textContent = 'AI：真实大模型';
+      m.className = 'badge ok';
+      m.title = 'MAAS_MODE=' + s.ai_mode + '：正在调用真实大模型接口。';
+    }
+
     const k = $('schedBadge');
     k.textContent = '调度器：' + (s.scheduler.running ? ('每 ' + s.scheduler.interval_minutes + ' 分钟') : '未启动');
     k.className = 'badge ' + (s.scheduler.running ? 'ok' : 'bad');
@@ -206,7 +222,12 @@ function renderDiag(d) {
   const causes = (d.root_causes || []).map((c) => `<li><b>${esc(c.issue)}</b><br><i>${esc(c.reason)}</i></li>`).join('');
   const actions = (d.actions || []).map((a) => `<li>[P${esc(a.priority)}] <b>${esc(a.action)}</b><br><i>${esc(a.how)}</i></li>`).join('');
   const patch = d.patch ? `<h4>修复补丁</h4><pre>${esc(d.patch)}</pre>` : '';
+  const meta = d._meta || {};
+  const mock = meta.provider === 'mock'
+    ? `<div class="mocknote"><b>模拟模式</b> —— 结论由内置规则引擎生成，未调用真实大模型。${esc(meta.note || '')}</div>`
+    : '';
   return `
+    ${mock}
     <div><span class="sev ${esc(d.severity || 'P3')}">${esc(d.severity || 'P3')}</span> ${esc(d.summary || '')}</div>
     ${causes ? `<h4>根因分析</h4><ul>${causes}</ul>` : ''}
     ${actions ? `<h4>处置建议</h4><ul>${actions}</ul>` : ''}

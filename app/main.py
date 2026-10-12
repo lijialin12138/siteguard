@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import ai, scheduler, service
-from .config import MAAS_MODEL, maas_ready
+from .config import MAAS_MODEL, maas_mode, maas_ready, mock_active
 from .db import init_db
 
 logging.basicConfig(
@@ -70,6 +70,8 @@ async def status():
     return {
         "maas_configured": maas_ready(),
         "maas_model": MAAS_MODEL,
+        "ai_mode": maas_mode(),
+        "mock_active": mock_active(),
         "scheduler": scheduler.job_info(),
     }
 
@@ -83,7 +85,12 @@ async def maas_ping():
         raise HTTPException(400, "MaaS 尚未配置，请检查项目根目录下的 .env 文件")
     except Exception as exc:
         raise HTTPException(502, f"调用 MaaS 失败：{type(exc).__name__}: {exc}")
-    return {"ok": True, "model": MAAS_MODEL, "reply": reply}
+    return {
+        "ok": True,
+        "model": "内置模拟诊断" if mock_active() else MAAS_MODEL,
+        "mock": mock_active(),
+        "reply": reply,
+    }
 
 
 # ---------------------------- 站点 ----------------------------
