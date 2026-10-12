@@ -1,0 +1,15 @@
+# SiteGuard - AI 自动化企业网站维护助手
+# 安装：python -m pip install -r requirements.txt
+
+fastapi>=0.115,<0.116
+uvicorn[standard]>=0.34,<0.35
+httpx>=0.28,<0.29
+beautifulsoup4>=4.12,<5
+apscheduler>=3.11,<4
+openai>=1.59,<2
+python-dotenv>=1.0,<2
+
+# 可选：更快的 HTML 解析器。
+# 装不上也没关系，scanner.py 会自动退回 Python 标准库的 html.parser。
+# 如果安装 lxml 报错（常见于新版 Python 还没有预编译包），直接注释掉这一行即可。
+# lxml>=5.3

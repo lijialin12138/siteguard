@@ -1,0 +1,31 @@
+# ---- 机密：绝对不能提交 ----
+.env
+
+# ---- 数据与运行时产物 ----
+data/
+*.db
+*.sqlite3
+logs/
+*.log
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# ---- 编辑器 ----
+.vscode/settings.json
+.idea/
+*.swp
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db
+
+# ---- 演示产物 ----
+demo_video/
+*.mp4

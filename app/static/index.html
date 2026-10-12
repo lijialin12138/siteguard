@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SiteGuard · 企业网站维护助手</title>
+<style>
+  :root{
+    --ink:#1a1d23; --ink2:#5a6274; --ink3:#8b93a3;
+    --line:#e3e6ec; --bg:#f6f7f9; --card:#fff;
+    --ok:#2f7a45; --ok-bg:#edf7f0;
+    --bad:#c62828; --bad-bg:#fdeded;
+    --warn:#9a6410; --warn-bg:#fdf5e6;
+    --accent:#1f5fa9; --accent-bg:#eaf2fb;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.7;
+    font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 22px 70px;}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px;}
+  h1{font-size:20px;margin:0;font-weight:700;}
+  .sub{color:var(--ink3);font-size:12.5px;}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:16px 0 20px;}
+  .badge{padding:3px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink2);}
+  .badge.ok{background:var(--ok-bg);color:var(--ok);border-color:#cfe6d6;}
+  .badge.bad{background:var(--bad-bg);color:var(--bad);border-color:#f3cfcf;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:14px;}
+  .card h2{font-size:14px;margin:0 0 12px;font-weight:700;}
+  input{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);outline:none;}
+  input:focus{border-color:var(--accent);}
+  button{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--line);
+    background:#fff;color:var(--ink);cursor:pointer;}
+  button:hover{border-color:var(--accent);color:var(--accent);}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+  button.primary:hover{opacity:.9;color:#fff;}
+  button:disabled{opacity:.5;cursor:not-allowed;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;}
+  .site{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;border-top:3px solid var(--line);}
+  .site.ok{border-top-color:var(--ok);}
+  .site.bad{border-top-color:var(--bad);}
+  .site.unknown{border-top-color:var(--ink3);}
+  .site .nm{font-weight:700;font-size:14.5px;}
+  .site .u{color:var(--ink3);font-size:12px;word-break:break-all;margin-bottom:10px;}
+  .metrics{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;margin-bottom:12px;}
+  .metrics span{color:var(--ink3);}
+  .metrics b{color:var(--ink);font-weight:700;}
+  .empty{color:var(--ink3);font-size:13px;padding:18px 0;text-align:center;}
+  pre{background:#f3f4f7;border:1px solid var(--line);border-radius:8px;padding:12px;
+    overflow:auto;font-size:12.5px;line-height:1.6;font-family:Consolas,Menlo,monospace;}
+  .diag{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px;font-size:13px;}
+  .sev{display:inline-block;padding:1px 8px;border-radius:6px;font-size:11.5px;font-weight:700;}
+  .sev.P0{background:var(--bad-bg);color:var(--bad);}
+  .sev.P1{background:var(--warn-bg);color:var(--warn);}
+  .sev.P2,.sev.P3{background:var(--accent-bg);color:var(--accent);}
+  .diag h4{font-size:12.5px;margin:12px 0 4px;color:var(--ink2);}
+  .diag ul{margin:0;padding-left:18px;}
+  .diag li{margin-bottom:4px;}
+  .diag li i{font-style:normal;color:var(--ink3);}
+  #toast{position:sticky;bottom:0;margin-top:16px;font-size:12.5px;color:var(--ink2);min-height:20px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>SiteGuard</h1>
+    <span class="sub">AI 自动化企业网站维护助手 · 华为云 CodeArts + MaaS</span>
+  </header>
+  <div class="bar">
+    <span class="badge" id="maasBadge">MaaS：检测中…</span>
+    <span class="badge" id="schedBadge">调度器：检测中…</span>
+    <button onclick="pingMaas()">测试大模型连通性</button>
+  </div>
+
+  <div class="card">
+    <h2>添加监控站点</h2>
+    <div class="row">
+      <input id="siteName" placeholder="站点名称（可留空）" style="width:200px">
+      <input id="siteUrl" placeholder="example.com" style="width:300px">
+      <button class="primary" onclick="addSite()">添加</button>
+      <button onclick="scanAll()">立即巡检全部</button>
+      <button onclick="load()">刷新</button>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+  <div id="toast"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let busy = false;
+
+function toast(msg) { $('toast').textContent = msg; }
+
+async function api(path, options) {
+  const resp = await fetch(path, options);
+  const text = await resp.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = { detail: text }; }
+  if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+  return data;
+}
+
+async function loadStatus() {
+  try {
+    const s = await api('/api/status');
+    const b = $('maasBadge');
+    b.textContent = 'MaaS：' + (s.maas_configured ? (s.maas_model + ' 已就绪') : '未配置');
+    b.className = 'badge ' + (s.maas_configured ? 'ok' : 'bad');
+    const k = $('schedBadge');
+    k.textContent = '调度器：' + (s.scheduler.running ? ('每 ' + s.scheduler.interval_minutes + ' 分钟') : '未启动');
+    k.className = 'badge ' + (s.scheduler.running ? 'ok' : 'bad');
+  } catch (e) { toast('读取状态失败：' + e.message); }
+}
+
+async function load() {
+  try {
+    const rows = await api('/api/overview');
+    render(rows);
+  } catch (e) { toast('加载失败：' + e.message); }
+}
+
+function render(rows) {
+  const grid = $('grid');
+  if (!rows.length) { grid.innerHTML = '<div class="empty">还没有监控站点，先添加一个吧（试试填你学校的官网）</div>'; return; }
+  grid.innerHTML = rows.map((r) => {
+    const state = r.scan_id == null ? 'unknown' : (r.is_ok ? 'ok' : 'bad');
+    const label = r.scan_id == null ? '尚未巡检' : (r.is_ok ? '正常' : '异常');
+    const ssl = r.ssl_days_left == null ? '—' : (r.ssl_days_left + ' 天');
+    return `
+    <div class="site ${state}" id="site-${r.site_id}">
+      <div class="nm">${esc(r.name)} <span class="badge ${state === 'ok' ? 'ok' : state === 'bad' ? 'bad' : ''}">${label}</span></div>
+      <div class="u">${esc(r.url)}</div>
+      <div class="metrics">
+        <span>状态码 <b>${r.status_code ?? '—'}</b></span>
+        <span>响应 <b>${r.response_ms != null ? r.response_ms + ' ms' : '—'}</b></span>
+        <span>SSL <b>${ssl}</b></span>
+        <span>死链 <b>${r.broken_links ?? 0}</b></span>
+      </div>
+      <div class="row">
+        <button onclick="scanOne(${r.site_id})">巡检</button>
+        <button onclick="diagnose(${r.site_id}, ${r.scan_id ?? 'null'})" ${r.scan_id == null ? 'disabled' : ''}>AI 诊断</button>
+        <button onclick="removeSite(${r.site_id})">删除</button>
+      </div>
+      <div class="diag" id="diag-${r.site_id}"></div>
+    </div>`;
+  }).join('');
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function addSite() {
+  const url = $('siteUrl').value.trim();
+  if (!url) { toast('请填写站点地址'); return; }
+  try {
+    await api('/api/sites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: $('siteName').value, url }),
+    });
+    $('siteName').value = ''; $('siteUrl').value = '';
+    toast('已添加，正在巡检…');
+    await load();
+  } catch (e) { toast('添加失败：' + e.message); }
+}
+
+async function removeSite(id) {
+  try { await api('/api/sites/' + id, { method: 'DELETE' }); toast('已删除'); load(); }
+  catch (e) { toast('删除失败：' + e.message); }
+}
+
+async function scanOne(id) {
+  toast('正在巡检，死链扫描可能需要十几秒…');
+  try {
+    const r = await api('/api/sites/' + id + '/scan', { method: 'POST' });
+    toast(`巡检完成，发现 ${r.report.issues.length} 个问题`);
+    load();
+  } catch (e) { toast('巡检失败：' + e.message); }
+}
+
+async function scanAll() {
+  toast('正在巡检全部站点…');
+  try {
+    const r = await api('/api/scan/all', { method: 'POST' });
+    toast(`已巡检 ${r.count} 个站点`);
+    load();
+  } catch (e) { toast('巡检失败：' + e.message); }
+}
+
+async function diagnose(siteId, scanId) {
+  if (scanId == null) { toast('请先巡检该站点'); return; }
+  const box = $('diag-' + siteId);
+  box.innerHTML = '<span class="sub">AI 正在分析…</span>';
+  try {
+    const r = await api('/api/scans/' + scanId + '/diagnose', { method: 'POST' });
+    box.innerHTML = renderDiag(r.result);
+  } catch (e) {
+    box.innerHTML = '<span style="color:var(--bad)">诊断失败：' + esc(e.message) + '</span>';
+  }
+}
+
+function renderDiag(d) {
+  const causes = (d.root_causes || []).map((c) => `<li><b>${esc(c.issue)}</b><br><i>${esc(c.reason)}</i></li>`).join('');
+  const actions = (d.actions || []).map((a) => `<li>[P${esc(a.priority)}] <b>${esc(a.action)}</b><br><i>${esc(a.how)}</i></li>`).join('');
+  const patch = d.patch ? `<h4>修复补丁</h4><pre>${esc(d.patch)}</pre>` : '';
+  return `
+    <div><span class="sev ${esc(d.severity || 'P3')}">${esc(d.severity || 'P3')}</span> ${esc(d.summary || '')}</div>
+    ${causes ? `<h4>根因分析</h4><ul>${causes}</ul>` : ''}
+    ${actions ? `<h4>处置建议</h4><ul>${actions}</ul>` : ''}
+    ${patch}`;
+}
+
+async function pingMaas() {
+  toast('正在测试…');
+  try {
+    const r = await api('/api/status/maas-ping', { method: 'POST' });
+    toast('大模型连通正常：' + r.reply);
+  } catch (e) { toast('连通失败：' + e.message); }
+}
+
+loadStatus();
+load();
+</script>
+</body>
+</html>
