@@ -48,6 +48,8 @@
   .metrics{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;margin-bottom:12px;}
   .metrics span{color:var(--ink3);}
   .metrics b{color:var(--ink);font-weight:700;}
+  .metrics span.warn{color:var(--warn);}
+  .metrics span.warn b{color:var(--warn);}
   .empty{color:var(--ink3);font-size:13px;padding:18px 0;text-align:center;}
   pre{background:#f3f4f7;border:1px solid var(--line);border-radius:8px;padding:12px;
     overflow:auto;font-size:12.5px;line-height:1.6;font-family:Consolas,Menlo,monospace;}
@@ -144,6 +146,8 @@ function render(rows) {
     const state = r.scan_id == null ? 'unknown' : (r.is_ok ? 'ok' : 'bad');
     const label = r.scan_id == null ? '尚未巡检' : (r.is_ok ? '正常' : '异常');
     const ssl = r.ssl_days_left == null ? '—' : (r.ssl_days_left + ' 天');
+    const pending = (r.link_server_error || 0) + (r.link_unverified || 0);
+    const pendingTip = `服务端错误 ${r.link_server_error || 0} 个 + 无法验证 ${r.link_unverified || 0} 个。两者都不等于失效，需人工确认。`;
     return `
     <div class="site ${state}" id="site-${r.site_id}">
       <div class="nm">${esc(r.name)} <span class="badge ${state === 'ok' ? 'ok' : state === 'bad' ? 'bad' : ''}">${label}</span></div>
@@ -152,7 +156,8 @@ function render(rows) {
         <span>状态码 <b>${r.status_code ?? '—'}</b></span>
         <span>响应 <b>${r.response_ms != null ? r.response_ms + ' ms' : '—'}</b></span>
         <span>SSL <b>${ssl}</b></span>
-        <span>死链 <b>${r.broken_links ?? 0}</b></span>
+        <span title="确认返回 4xx 的失效链接">失效链接 <b>${r.broken_links ?? 0}</b></span>
+        ${pending ? `<span class="warn" title="${pendingTip}">待确认 <b>${pending}</b></span>` : ''}
       </div>
       <div class="row">
         <button onclick="scanOne(${r.site_id})">巡检</button>
@@ -189,7 +194,7 @@ async function removeSite(id) {
 }
 
 async function scanOne(id) {
-  toast('正在巡检，死链扫描可能需要十几秒…');
+  toast('正在巡检，链接需二次复核，可能需要十几秒…');
   try {
     const r = await api('/api/sites/' + id + '/scan', { method: 'POST' });
     toast(`巡检完成，发现 ${r.report.issues.length} 个问题`);

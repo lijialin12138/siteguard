@@ -30,8 +30,15 @@ SYSTEM_PROMPT = """你是一名资深的企业级网站运维工程师（SRE）�
 
 你会收到一份由自动化巡检程序生成的「网站体检报告」JSON，里面可能包含：
 站点地址、HTTP 状态码、响应耗时、SSL 证书剩余天数、
-页面基础信息（标题/描述/H1 数量/图片 alt 缺失数）、死链列表，
+页面基础信息（标题/描述/H1 数量/图片 alt 缺失数）、链接异常清单，
 以及程序依据规则初步标记的问题清单 issues。
+
+关于链接异常，报告里会分三类给出，含义严格不同，**不要混用**：
+- broken_link_count：对方明确返回 404/410（资源不存在）的失效链接，这才是真正需要修的「死链」；
+- link_server_error_count：返回 5xx 的链接，可能是服务端瞬时故障，未必是链接本身的问题；
+- link_unverified_count：连不上、被反爬拦截或被限流而无法验证的链接（403/429 属于这一类）。
+  它们**不代表链接失效**——403/429 表示「拒绝服务」而非「不存在」，浏览器往往能正常打开。
+  不要在结论里把它们说成死链，只能提示人工确认或稍后复测。
 
 你的任务：像一名真正的运维工程师那样分析这份报告，给出诊断结论。
 
@@ -87,6 +94,8 @@ def _extract_json(text: str) -> dict:
 def _slim_report(report: dict) -> dict:
     """只把关键字段送给模型，减少 token 消耗，也降低它被无关信息干扰的概率。"""
     broken = report.get("broken_links") or []
+    link_5xx = report.get("server_error_links") or []
+    unverified = report.get("unverified_links") or []
     return {
         "url": report.get("final_url") or report.get("url"),
         "status_code": report.get("status_code"),
@@ -97,8 +106,13 @@ def _slim_report(report: dict) -> dict:
         "h1_count": report.get("h1_count"),
         "images_total": report.get("images_total"),
         "images_without_alt": report.get("images_without_alt"),
+        # 链接问题分三类给出，含义不同，不要混为一谈：
+        # broken = 确认 4xx 失效；server_error = 5xx（可能瞬时）；unverified = 无法验证，不等于失效
         "broken_link_count": len(broken),
         "broken_link_samples": [b.get("url") for b in broken[:5]],
+        "link_server_error_count": len(link_5xx),
+        "link_server_error_samples": [b.get("url") for b in link_5xx[:5]],
+        "link_unverified_count": len(unverified),
         "issues": report.get("issues") or [],
         "fetch_error": report.get("error"),
         "scanned_at": report.get("scanned_at"),
@@ -192,7 +206,8 @@ _MOCK_KNOWLEDGE: dict[str, tuple[str, str, str, str]] = {
         "sudo nginx -t && sudo systemctl reload nginx",
     ),
     "broken_link": (
-        "存在指向 404 的站内链接，通常是页面改版或文章下线后忘记同步更新链接，"
+        "存在指向 404/410 的站内链接——对方服务器明确回应该资源不存在，"
+        "通常是页面改版或文章下线后忘记同步更新链接，"
         "既影响访客体验，也会让搜索引擎判定站点质量下降。",
         "清理死链并补上重定向",
         "用爬虫工具导出全部 4xx 链接清单，逐条判断：有效内容就补 301 到新地址，"
@@ -200,6 +215,35 @@ _MOCK_KNOWLEDGE: dict[str, tuple[str, str, str, str]] = {
         "# 导出站内 4xx 链接清单\n"
         "wget --spider -r -nd -nv -o spider.log https://你的域名\n"
         "grep -E \" 40[0-9] | 50[0-9] \" spider.log",
+    ),
+    "link_server_error": (
+        "被链接的页面返回 5xx，说明请求已经到达对方服务器但处理失败。"
+        "注意这类错误往往是瞬时的（对方重启、限流、上游依赖故障），"
+        "不能直接判定链接失效——应当先复测确认是否持续存在。",
+        "复测确认后再决定是否整改",
+        "对这批链接间隔一段时间复测 2–3 次：若恢复 2xx 说明是对方瞬时故障，无需处理；"
+        "若持续 5xx，再联系对方站点负责人或从本页面暂时摘除；"
+        "如果对方是本单位的另一个业务系统，直接查它的应用日志。",
+        "# 对单个可疑链接连续复测，确认是否持续失败\n"
+        "for i in 1 2 3; do\n"
+        "    curl -o /dev/null -s -w \"%{http_code}\\n\" https://可疑链接\n"
+        "    sleep 5\n"
+        "done",
+    ),
+    "link_unverified": (
+        "这批链接在巡检时没能拿到有效响应，常见原因是对方做了反爬拦截、"
+        "要求登录、**对短时间内的高频请求限流**，或者网络临时不通。"
+        "**它们并不等于失效链接**，只是自动化程序无法确认，需要人工抽查。"
+        "特别注意 403/429：这两个状态码表示『拒绝服务』而不是『资源不存在』，"
+        "浏览器往往能正常打开。",
+        "人工抽查确认，不要直接删除",
+        "从清单里随机挑几条在浏览器里打开：能正常访问说明是反爬拦截，"
+        "这类链接应从巡检结果里剔除，避免制造噪音；真打不开的才需要跟进。",
+        "# 逐条复核：浏览器能打开 = 反爬拦截（误报），打不开 = 真问题\n"
+        "for u in $(cat unverified.txt); do\n"
+        "    printf '%-70s' \"$u\"\n"
+        "    curl -o /dev/null -s -w '%{http_code}\\n' -A 'Mozilla/5.0' \"$u\"\n"
+        "done",
     ),
     "seo": (
         "页面缺少 title / meta description / H1 等基础标签。"
@@ -328,7 +372,9 @@ def _mock_daily_report(report: dict, diagnosis: dict) -> str:
         f"- 响应耗时：{report.get('response_ms') if report.get('response_ms') is not None else '—'} ms",
         f"- HTTP 状态码：{report.get('status_code') if report.get('status_code') is not None else '—'}",
         f"- SSL 剩余：{ssl if ssl is not None else '—'} 天",
-        f"- 死链数量：{len(report.get('broken_links') or [])}",
+        f"- 失效链接（4xx）：{len(report.get('broken_links') or [])}",
+        f"- 服务端错误链接（5xx）：{len(report.get('server_error_links') or [])}",
+        f"- 无法验证链接：{len(report.get('unverified_links') or [])}",
         "",
         "## 发现的问题",
         "",

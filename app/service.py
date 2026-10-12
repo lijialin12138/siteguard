@@ -147,7 +147,7 @@ def latest_scan_per_site() -> list[dict]:
             """
             SELECT s.id AS site_id, s.name, s.url,
                    sc.id AS scan_id, sc.status_code, sc.response_ms, sc.is_ok,
-                   sc.ssl_days_left, sc.broken_links, sc.created_at
+                   sc.ssl_days_left, sc.broken_links, sc.raw_json, sc.created_at
             FROM sites s
             LEFT JOIN scans sc ON sc.id = (
                 SELECT id FROM scans WHERE site_id = s.id ORDER BY id DESC LIMIT 1
@@ -155,7 +155,21 @@ def latest_scan_per_site() -> list[dict]:
             ORDER BY s.id
             """
         ).fetchall()
-    return rows_to_dicts(rows)
+    result = rows_to_dicts(rows)
+    for row in result:
+        # broken_links 存的是「确认 4xx 失效」的数量；另外两类从原始报告里取出来单独给。
+        # 分开呈现是有意的：5xx 和「无法验证」都不等于死链，混在一起会把用户吓一跳，
+        # 也会降低这份报告的可信度。
+        raw = row.pop("raw_json", None)
+        report: dict = {}
+        if raw:
+            try:
+                report = json.loads(raw)
+            except (TypeError, ValueError):
+                report = {}
+        row["link_server_error"] = len(report.get("server_error_links") or [])
+        row["link_unverified"] = len(report.get("unverified_links") or [])
+    return result
 
 
 def issue_levels(scan_id: int) -> dict[str, int]:
