@@ -161,10 +161,13 @@ siteguard/
 │   ├── main.py         FastAPI 入口与路由
 │   └── static/         控制台前端
 ├── scripts/
-│   └── smoke_maas.py   第一天用的连通性自检
+│   └── smoke_maas.py   大模型接口连通性自检
+├── ONBOARDING.md       团队上手与分工（新成员从这里开始）
 ├── .env.example        环境变量模板（.env 已被 git 忽略）
 └── requirements.txt
 ```
+
+**刚加入项目？** 先读 [`ONBOARDING.md`](ONBOARDING.md)，里面有从零到能改代码的完整步骤。
 
 ## 接口一览
 
