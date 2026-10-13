@@ -16,7 +16,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
-from .config import MAX_CONCURRENCY, MAX_LINKS_PER_PAGE, REQUEST_TIMEOUT
+from .config import MAX_CONCURRENCY, MAX_LINKS_PER_PAGE, REQUEST_TIMEOUT,RESP_VERY_SLOW_MS,RESP_SLOW_MS,SSL_WARN_DAYS
 
 USER_AGENT = "SiteGuard/0.1 (AI website maintenance assistant; Huawei ICT Competition)"
 HEADERS = {"User-Agent": USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"}
@@ -234,11 +234,11 @@ def build_issues(report: dict) -> list[dict]:
 
     ms = report.get("response_ms")
     if isinstance(ms, int):
-        if ms >= 5000:
+        if ms >= RESP_VERY_SLOW_MS:
             issues.append(
                 {"level": "P1", "category": "performance", "message": f"响应极慢：{ms} ms"}
             )
-        elif ms >= 2000:
+        elif ms >= RESP_SLOW_MS:
             issues.append(
                 {"level": "P2", "category": "performance", "message": f"响应偏慢：{ms} ms"}
             )
@@ -249,7 +249,7 @@ def build_issues(report: dict) -> list[dict]:
             issues.append(
                 {"level": "P0", "category": "ssl", "message": "SSL 证书已过期，浏览器会直接拦截"}
             )
-        elif days <= 15:
+        elif days <= SSL_WARN_DAYS:
             issues.append(
                 {"level": "P1", "category": "ssl", "message": f"SSL 证书仅剩 {days} 天到期"}
             )
