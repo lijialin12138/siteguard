@@ -49,6 +49,9 @@ SCAN_INTERVAL_MINUTES = _get_int("SCAN_INTERVAL_MINUTES", 30)
 REQUEST_TIMEOUT = _get_float("REQUEST_TIMEOUT", 10.0)
 MAX_LINKS_PER_PAGE = _get_int("MAX_LINKS_PER_PAGE", 50)
 MAX_CONCURRENCY = _get_int("MAX_CONCURRENCY", 10)
+RESP_VERY_SLOW_MS = _get_int("RESP_VERY_SLOW_MS", 5000)
+RESP_SLOW_MS = _get_int("RESP_SLOW_MS", 2000)
+SSL_WARN_DAYS = _get_int("SSL_WARN_DAYS", 15)
 
 # ---------- 大模型运行模式 ----------
 # auto：配了真实 Key 就走真实模型；没配则自动降级为内置模拟诊断（默认，适合边开发边等 Key）
