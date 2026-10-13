@@ -37,6 +37,7 @@
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
   button.primary:hover{opacity:.9;color:#fff;}
   button:disabled{opacity:.5;cursor:not-allowed;}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:3px;}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;}
   .site{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;border-top:3px solid var(--line);}
@@ -51,13 +52,30 @@
   .metrics span.warn{color:var(--warn);}
   .metrics span.warn b{color:var(--warn);}
   .empty{color:var(--ink3);font-size:13px;padding:18px 0;text-align:center;}
+  .notice{grid-column:1/-1;padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--card);}
+  .notice.error,.inline-error{color:var(--bad);}
+  .notice p{margin:0 0 8px;}
+  .site-status{margin:10px 0;color:var(--ink2);font-size:12.5px;}
+  .issues{margin-top:12px;border-top:1px solid var(--line);padding-top:12px;}
+  .issues[hidden],.diag:empty{display:none;}
+  .issues h3{margin:0 0 8px;font-size:13px;}
+  .issue-list{list-style:none;margin:0;padding:0;}
+  .issue-list li{padding:10px 0;border-bottom:1px solid var(--line);}
+  .issue-list li:last-child{border-bottom:0;}
+  .issue-category{margin-left:7px;font-size:12px;color:var(--ink2);overflow-wrap:anywhere;}
+  .issue-message{margin-top:5px;overflow-wrap:anywhere;}
+  .issue-hint{color:var(--ink3);font-size:12px;margin:8px 0 0;}
+  .inline-error{overflow-wrap:anywhere;}
+  .inline-error p{margin:0 0 8px;}
+  @media(max-width:480px){.wrap{padding:18px 12px 40px;}.grid{grid-template-columns:minmax(0,1fr);}.row input{width:100%!important;}.site{min-width:0;padding:14px;}.metrics{gap:10px;}}
   pre{background:#f3f4f7;border:1px solid var(--line);border-radius:8px;padding:12px;
     overflow:auto;font-size:12.5px;line-height:1.6;font-family:Consolas,Menlo,monospace;}
   .diag{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px;font-size:13px;}
   .sev{display:inline-block;padding:1px 8px;border-radius:6px;font-size:11.5px;font-weight:700;}
   .sev.P0{background:var(--bad-bg);color:var(--bad);}
   .sev.P1{background:var(--warn-bg);color:var(--warn);}
-  .sev.P2,.sev.P3{background:var(--accent-bg);color:var(--accent);}
+  .sev.P2{background:var(--accent-bg);color:var(--accent);}
+  .sev.P3{background:#f1ebfa;color:#70509a;}
   .diag h4{font-size:12.5px;margin:12px 0 4px;color:var(--ink2);}
   .diag ul{margin:0;padding-left:18px;}
   .diag li{margin-bottom:4px;}
@@ -75,180 +93,329 @@
     <span class="badge" id="maasBadge">MaaS：检测中…</span>
     <span class="badge" id="aiModeBadge">AI：检测中…</span>
     <span class="badge" id="schedBadge">调度器：检测中…</span>
-    <button onclick="pingMaas()">测试大模型连通性</button>
+    <button id="pingButton" onclick="pingMaas()">测试大模型连通性</button>
   </div>
 
   <div class="card">
     <h2>添加监控站点</h2>
     <div class="row">
-      <input id="siteName" placeholder="站点名称（可留空）" style="width:200px">
-      <input id="siteUrl" placeholder="example.com" style="width:300px">
-      <button class="primary" onclick="addSite()">添加</button>
-      <button onclick="scanAll()">立即巡检全部</button>
-      <button onclick="load()">刷新</button>
+      <input id="siteName" aria-label="站点名称" placeholder="站点名称（可留空）" style="width:200px">
+      <input id="siteUrl" aria-label="站点地址" placeholder="请输入真实网站地址" style="width:300px">
+      <button id="addButton" class="primary" onclick="addSite()">添加</button>
+      <button id="scanAllButton" onclick="scanAll()">立即巡检全部</button>
+      <button id="refreshButton" onclick="refresh()">刷新</button>
     </div>
   </div>
 
-  <div class="grid" id="grid"></div>
-  <div id="toast"></div>
+  <div class="grid" id="grid" aria-busy="true"><div class="notice" role="status">正在加载监控站点…</div></div>
+  <div id="toast" role="status" aria-live="polite"></div>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let busy = false;
+let rows = [];
+const siteStates = new Map();
+let overviewLoading = false;
+let overviewError = '';
+let overviewRequest = 0;
+let adding = false;
+let activeScan = null;
+let pinging = false;
 
 function toast(msg) { $('toast').textContent = msg; }
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
-async function api(path, options) {
-  const resp = await fetch(path, options);
-  const text = await resp.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = { detail: text }; }
-  if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
-  return data;
+async function api(path, options = {}, timeout = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const resp = await fetch(path, { ...options, signal: controller.signal });
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch { throw new Error('服务返回了无法识别的数据，请稍后重试。'); }
+    if (!resp.ok) throw new Error(typeof data.detail === 'string' ? data.detail : ('请求失败（HTTP ' + resp.status + '）'));
+    return data;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('请求超时，请稍后重试。');
+    if (e instanceof TypeError) throw new Error('无法连接服务，请确认项目已启动。');
+    throw e;
+  } finally { clearTimeout(timer); }
 }
 
 async function loadStatus() {
   try {
     const s = await api('/api/status');
-    const b = $('maasBadge');
-    b.textContent = 'MaaS：' + (s.maas_configured ? (s.maas_model + ' 已就绪') : '未配置');
-    b.className = 'badge ' + (s.maas_configured ? 'ok' : 'bad');
-
+    $('maasBadge').textContent = 'MaaS：' + (s.maas_configured ? (s.maas_model + ' 已配置') : '未配置');
+    $('maasBadge').className = 'badge ' + (s.maas_configured ? 'ok' : 'warn');
     const m = $('aiModeBadge');
-    if (s.mock_active) {
-      m.textContent = 'AI：模拟模式（内置诊断）';
-      m.className = 'badge warn';
-      m.title = 'MAAS_MODE=' + s.ai_mode + '：未接入真实大模型，结论由内置规则生成。正式提交前请配置 Key 并设为 off。';
-    } else {
-      m.textContent = 'AI：真实大模型';
-      m.className = 'badge ok';
-      m.title = 'MAAS_MODE=' + s.ai_mode + '：正在调用真实大模型接口。';
+    m.textContent = s.mock_active ? 'AI：模拟模式（内置诊断）' : 'AI：真实大模型';
+    m.className = 'badge ' + (s.mock_active ? 'warn' : 'ok');
+    m.title = s.mock_active ? '结论由内置规则生成，未调用真实大模型。' : '已选择真实模型模式，可点击连通性测试确认服务可用。';
+    $('schedBadge').textContent = '调度器：' + (s.scheduler.running ? ('每 ' + s.scheduler.interval_minutes + ' 分钟') : '未启动');
+    $('schedBadge').className = 'badge ' + (s.scheduler.running ? 'ok' : 'warn');
+  } catch (e) {
+    for (const id of ['maasBadge', 'aiModeBadge', 'schedBadge']) {
+      $(id).textContent = '状态读取失败';
+      $(id).className = 'badge bad';
     }
-
-    const k = $('schedBadge');
-    k.textContent = '调度器：' + (s.scheduler.running ? ('每 ' + s.scheduler.interval_minutes + ' 分钟') : '未启动');
-    k.className = 'badge ' + (s.scheduler.running ? 'ok' : 'bad');
-  } catch (e) { toast('读取状态失败：' + e.message); }
+    toast('读取状态失败：' + e.message);
+  }
 }
 
-async function load() {
-  try {
-    const rows = await api('/api/overview');
-    render(rows);
-  } catch (e) { toast('加载失败：' + e.message); }
+function stateFor(row) {
+  let state = siteStates.get(row.site_id);
+  if (!state) {
+    state = { scanId: row.scan_id, expanded: false, issues: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '', deleting: false, scanError: '' };
+    siteStates.set(row.site_id, state);
+  } else if (state.scanId !== row.scan_id) {
+    // 明细与诊断绑定巡检记录；新巡检不能继续显示旧记录的结论。
+    Object.assign(state, { scanId: row.scan_id, issues: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '' });
+  }
+  return state;
 }
 
-function render(rows) {
+function syncControls() {
+  const working = rows.some((r) => { const s = stateFor(r); return s.diagnosing || s.deleting; });
+  $('addButton').disabled = adding;
+  $('addButton').textContent = adding ? '添加中…' : '添加';
+  $('siteName').disabled = adding;
+  $('siteUrl').disabled = adding;
+  $('scanAllButton').disabled = activeScan !== null || working || !rows.length;
+  $('scanAllButton').textContent = activeScan === 'all' ? '正在巡检全部…' : '立即巡检全部';
+  $('refreshButton').disabled = overviewLoading;
+  $('refreshButton').textContent = overviewLoading ? '刷新中…' : '刷新';
+  $('grid').setAttribute('aria-busy', String(overviewLoading));
+}
+
+function renderIssues(row, state) {
+  if (!state.expanded) return '';
+  if (row.scan_id == null) return '<p class="sub">尚未巡检，请先点击“巡检”。</p>';
+  if (state.loading) return '<p class="sub" role="status">正在加载问题明细…</p>';
+  if (state.error) return `<div class="inline-error" role="alert"><p>加载问题明细失败：${esc(state.error)}</p><button onclick="loadIssues(${row.site_id})">重试加载</button></div>`;
+  if (state.issues === null) return '<p class="sub">问题明细尚未加载。</p>';
+  if (!state.issues.length) return '<p class="sub">本次巡检未发现问题。</p>';
+  return `<h3>巡检问题 · ${state.issues.length} 项</h3><ul class="issue-list">${state.issues.map((issue) => {
+    const level = ['P0', 'P1', 'P2', 'P3'].includes(issue.level) ? issue.level : '';
+    return `<li><span class="sev ${level}">${esc(issue.level || '未分级')}</span><span class="issue-category">分类：${esc(issue.category || '未分类')}</span><div class="issue-message">${esc(issue.message)}</div></li>`;
+  }).join('')}</ul><p class="issue-hint">以上为巡检发现的问题；根因与处置建议请查看 AI 诊断。</p>`;
+}
+
+function render() {
+  const focusId = document.activeElement?.id;
   const grid = $('grid');
-  if (!rows.length) { grid.innerHTML = '<div class="empty">还没有监控站点，先添加一个吧（试试填你学校的官网）</div>'; return; }
-  grid.innerHTML = rows.map((r) => {
+  const notice = overviewError
+    ? `<div class="notice error" role="alert"><p>加载站点失败：${esc(overviewError)}${rows.length ? ' 当前保留上次加载的站点。' : ''}</p><button onclick="load()">重试加载站点</button></div>`
+    : overviewLoading ? '<div class="notice" role="status">正在加载监控站点…</div>' : '';
+  const empty = !rows.length && !overviewLoading && !overviewError
+    ? '<div class="notice empty">还没有监控站点。请在上方填写真实网站地址并点击“添加”，再进行巡检。</div>' : '';
+  grid.innerHTML = notice + empty + rows.map((r) => {
+    const s = stateFor(r);
+    const scanning = activeScan === 'all' || activeScan === r.site_id;
+    const working = scanning || s.diagnosing || s.deleting;
     const state = r.scan_id == null ? 'unknown' : (r.is_ok ? 'ok' : 'bad');
-    const label = r.scan_id == null ? '尚未巡检' : (r.is_ok ? '正常' : '异常');
+    const label = r.scan_id == null ? '尚未巡检' : (r.is_ok ? '可访问' : '访问异常');
     const ssl = r.ssl_days_left == null ? '—' : (r.ssl_days_left + ' 天');
     const pending = (r.link_server_error || 0) + (r.link_unverified || 0);
-    const pendingTip = `服务端错误 ${r.link_server_error || 0} 个 + 无法验证 ${r.link_unverified || 0} 个。两者都不等于失效，需人工确认。`;
-    return `
-    <div class="site ${state}" id="site-${r.site_id}">
+    let diagnosis = '';
+    if (s.diagnosing) diagnosis = '<span class="sub" role="status">AI 正在分析…</span>';
+    else if (s.diagnosisError) diagnosis = `<div class="inline-error" role="alert"><p>诊断失败：${esc(s.diagnosisError)}</p><button onclick="diagnose(${r.site_id}, ${r.scan_id})" ${working ? 'disabled' : ''}>重试诊断</button></div>`;
+    else if (s.diagnosis) diagnosis = renderDiag(s.diagnosis);
+    return `<div class="site ${state}" id="site-${r.site_id}">
       <div class="nm">${esc(r.name)} <span class="badge ${state === 'ok' ? 'ok' : state === 'bad' ? 'bad' : ''}">${label}</span></div>
       <div class="u">${esc(r.url)}</div>
       <div class="metrics">
         <span>状态码 <b>${r.status_code ?? '—'}</b></span>
         <span>响应 <b>${r.response_ms != null ? r.response_ms + ' ms' : '—'}</b></span>
         <span>SSL <b>${ssl}</b></span>
-        <span title="确认返回 4xx 的失效链接">失效链接 <b>${r.broken_links ?? 0}</b></span>
-        ${pending ? `<span class="warn" title="${pendingTip}">待确认 <b>${pending}</b></span>` : ''}
+        <span title="确认返回 404/410，资源不存在">失效链接 <b>${r.broken_links ?? 0}</b></span>
+        ${pending ? `<span class="warn" title="服务端错误 ${r.link_server_error || 0} 个；无法验证 ${r.link_unverified || 0} 个。均不能直接判为失效。">待确认 <b>${pending}</b></span>` : ''}
       </div>
       <div class="row">
-        <button onclick="scanOne(${r.site_id})">巡检</button>
-        <button onclick="diagnose(${r.site_id}, ${r.scan_id ?? 'null'})" ${r.scan_id == null ? 'disabled' : ''}>AI 诊断</button>
-        <button onclick="removeSite(${r.site_id})">删除</button>
+        <button id="scan-${r.site_id}" onclick="scanOne(${r.site_id})" ${activeScan !== null || working ? 'disabled' : ''}>${scanning ? '巡检中…' : '巡检'}</button>
+        <button id="toggle-${r.site_id}" onclick="toggleIssues(${r.site_id})" aria-expanded="${s.expanded}" aria-controls="issues-${r.site_id}">${s.expanded ? '收起问题' : '查看问题'}</button>
+        <button id="diagnose-${r.site_id}" onclick="diagnose(${r.site_id}, ${r.scan_id ?? 'null'})" ${r.scan_id == null || working ? 'disabled' : ''}>${s.diagnosing ? '诊断中…' : 'AI 诊断'}</button>
+        <button onclick="removeSite(${r.site_id})" ${activeScan !== null || working ? 'disabled' : ''}>${s.deleting ? '删除中…' : '删除'}</button>
       </div>
-      <div class="diag" id="diag-${r.site_id}"></div>
+      ${scanning ? '<p class="site-status" role="status">正在巡检，链接需二次复核，请稍候。完成前不能重复发起巡检。</p>' : ''}
+      ${s.scanError ? `<p class="site-status inline-error" role="alert">巡检失败：${esc(s.scanError)}。可点击“巡检”重试。</p>` : ''}
+      <div class="issues" id="issues-${r.site_id}" ${s.expanded ? '' : 'hidden'} aria-busy="${s.loading}">${renderIssues(r, s)}</div>
+      <div class="diag" id="diag-${r.site_id}" aria-busy="${s.diagnosing}">${diagnosis}</div>
     </div>`;
   }).join('');
+  syncControls();
+  if (focusId && $(focusId) && !$(focusId).disabled) $(focusId).focus({ preventScroll: true });
 }
 
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+async function load() {
+  const request = ++overviewRequest;
+  overviewLoading = true;
+  overviewError = '';
+  render();
+  try {
+    const result = await api('/api/overview');
+    if (!Array.isArray(result)) throw new Error('站点列表格式不正确。');
+    if (request !== overviewRequest) return;
+    rows = result;
+    const ids = new Set(rows.map((r) => r.site_id));
+    for (const id of siteStates.keys()) if (!ids.has(id)) siteStates.delete(id);
+    rows.forEach(stateFor);
+  } catch (e) {
+    if (request === overviewRequest) overviewError = e.message;
+  } finally {
+    if (request === overviewRequest) {
+      overviewLoading = false;
+      render();
+      for (const r of rows) {
+        const s = stateFor(r);
+        if (s.expanded && r.scan_id != null && s.issues === null && !s.loading && !s.error) loadIssues(r.site_id);
+      }
+    }
+  }
+}
+
+function toggleIssues(id) {
+  const row = rows.find((r) => r.site_id === id);
+  if (!row) return;
+  const s = stateFor(row);
+  s.expanded = !s.expanded;
+  render();
+  if (s.expanded && row.scan_id != null && s.issues === null && !s.loading) loadIssues(id);
+}
+
+async function loadIssues(id) {
+  const row = rows.find((r) => r.site_id === id);
+  if (!row || row.scan_id == null) return;
+  const s = stateFor(row);
+  if (s.loading) return;
+  const scanId = row.scan_id;
+  s.loading = true;
+  s.error = '';
+  render();
+  try {
+    const scan = await api('/api/scans/' + scanId);
+    if (!Array.isArray(scan.report?.issues)) throw new Error('巡检记录缺少问题清单，请重新巡检。');
+    if (siteStates.get(id) === s && s.scanId === scanId) s.issues = scan.report.issues;
+  } catch (e) {
+    if (siteStates.get(id) === s && s.scanId === scanId) s.error = e.message;
+  } finally {
+    if (siteStates.get(id) === s && s.scanId === scanId) { s.loading = false; render(); }
+  }
 }
 
 async function addSite() {
+  if (adding) return;
   const url = $('siteUrl').value.trim();
-  if (!url) { toast('请填写站点地址'); return; }
+  if (!url) { toast('请填写站点地址'); $('siteUrl').focus(); return; }
+  const name = $('siteName').value;
+  adding = true;
+  syncControls();
   try {
-    await api('/api/sites', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: $('siteName').value, url }),
-    });
+    await api('/api/sites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, url }) });
     $('siteName').value = ''; $('siteUrl').value = '';
-    toast('已添加，正在巡检…');
+    toast('已添加，请点击“巡检”检查该站点。');
     await load();
   } catch (e) { toast('添加失败：' + e.message); }
+  finally { adding = false; syncControls(); }
 }
 
 async function removeSite(id) {
-  try { await api('/api/sites/' + id, { method: 'DELETE' }); toast('已删除'); load(); }
+  const row = rows.find((r) => r.site_id === id);
+  if (!row || activeScan !== null) return;
+  const s = stateFor(row);
+  if (s.deleting || s.diagnosing) return;
+  s.deleting = true;
+  render();
+  try { await api('/api/sites/' + id, { method: 'DELETE' }); toast('已删除'); await load(); }
   catch (e) { toast('删除失败：' + e.message); }
+  finally { s.deleting = false; render(); }
 }
 
 async function scanOne(id) {
-  toast('正在巡检，链接需二次复核，可能需要十几秒…');
+  const row = rows.find((r) => r.site_id === id);
+  if (!row || activeScan !== null) return;
+  const s = stateFor(row);
+  if (s.diagnosing || s.deleting) return;
+  activeScan = id;
+  s.scanError = '';
+  render();
+  toast('正在巡检，请稍候，避免重复操作。');
   try {
-    const r = await api('/api/sites/' + id + '/scan', { method: 'POST' });
-    toast(`巡检完成，发现 ${r.report.issues.length} 个问题`);
-    load();
-  } catch (e) { toast('巡检失败：' + e.message); }
+    const r = await api('/api/sites/' + id + '/scan', { method: 'POST' }, 180000);
+    toast(`巡检完成，发现 ${(r.report?.issues || []).length} 个问题。`);
+    await load();
+  } catch (e) { s.scanError = e.message; toast('巡检失败：' + e.message); }
+  finally { activeScan = null; render(); }
 }
 
 async function scanAll() {
-  toast('正在巡检全部站点…');
+  if (activeScan !== null || !rows.length || rows.some((r) => { const s = stateFor(r); return s.diagnosing || s.deleting; })) return;
+  activeScan = 'all';
+  rows.forEach((r) => { stateFor(r).scanError = ''; });
+  render();
+  toast('正在巡检全部站点，请稍候。');
   try {
-    const r = await api('/api/scan/all', { method: 'POST' });
-    toast(`已巡检 ${r.count} 个站点`);
-    load();
-  } catch (e) { toast('巡检失败：' + e.message); }
+    const result = await api('/api/scan/all', { method: 'POST' }, 180000);
+    const scans = result.scans || [];
+    const failures = scans.filter((scan) => scan.error);
+    for (const scan of failures) {
+      const s = siteStates.get(scan.site_id);
+      if (s) s.scanError = scan.error;
+    }
+    toast(failures.length ? `巡检结束，${failures.length} 个站点未能完成，请查看卡片提示。` : `已巡检 ${result.count} 个站点。`);
+    await load();
+  } catch (e) {
+    rows.forEach((r) => { stateFor(r).scanError = e.message; });
+    toast('巡检失败：' + e.message);
+  } finally { activeScan = null; render(); }
 }
 
 async function diagnose(siteId, scanId) {
-  if (scanId == null) { toast('请先巡检该站点'); return; }
-  const box = $('diag-' + siteId);
-  box.innerHTML = '<span class="sub">AI 正在分析…</span>';
+  const row = rows.find((r) => r.site_id === siteId);
+  if (!row || scanId == null) { toast('请先巡检该站点'); return; }
+  const s = stateFor(row);
+  if (s.scanId !== scanId || s.diagnosing || s.deleting || activeScan === 'all' || activeScan === siteId) return;
+  s.diagnosing = true;
+  s.diagnosisError = '';
+  render();
   try {
-    const r = await api('/api/scans/' + scanId + '/diagnose', { method: 'POST' });
-    box.innerHTML = renderDiag(r.result);
+    const result = await api('/api/scans/' + scanId + '/diagnose', { method: 'POST' }, 90000);
+    if (!result.result || typeof result.result !== 'object' || Array.isArray(result.result)) throw new Error('诊断结果格式不正确，请稍后重试。');
+    if (siteStates.get(siteId) === s && s.scanId === scanId) s.diagnosis = result.result;
   } catch (e) {
-    box.innerHTML = '<span style="color:var(--bad)">诊断失败：' + esc(e.message) + '</span>';
+    if (siteStates.get(siteId) === s && s.scanId === scanId) s.diagnosisError = e.message;
+  } finally {
+    if (siteStates.get(siteId) === s && s.scanId === scanId) { s.diagnosing = false; render(); }
   }
 }
 
 function renderDiag(d) {
-  const causes = (d.root_causes || []).map((c) => `<li><b>${esc(c.issue)}</b><br><i>${esc(c.reason)}</i></li>`).join('');
-  const actions = (d.actions || []).map((a) => `<li>[P${esc(a.priority)}] <b>${esc(a.action)}</b><br><i>${esc(a.how)}</i></li>`).join('');
+  const causes = (Array.isArray(d.root_causes) ? d.root_causes : []).map((c) => `<li><b>${esc(c?.issue)}</b><br><i>${esc(c?.reason)}</i></li>`).join('');
+  const actions = (Array.isArray(d.actions) ? d.actions : []).map((a) => `<li>[步骤 ${esc(a?.priority)}] <b>${esc(a?.action)}</b><br><i>${esc(a?.how)}</i></li>`).join('');
   const patch = d.patch ? `<h4>修复补丁</h4><pre>${esc(d.patch)}</pre>` : '';
   const meta = d._meta || {};
-  const mock = meta.provider === 'mock'
-    ? `<div class="mocknote"><b>模拟模式</b> —— 结论由内置规则引擎生成，未调用真实大模型。${esc(meta.note || '')}</div>`
-    : '';
-  return `
-    ${mock}
-    <div><span class="sev ${esc(d.severity || 'P3')}">${esc(d.severity || 'P3')}</span> ${esc(d.summary || '')}</div>
-    ${causes ? `<h4>根因分析</h4><ul>${causes}</ul>` : ''}
-    ${actions ? `<h4>处置建议</h4><ul>${actions}</ul>` : ''}
-    ${patch}`;
+  const level = ['P0', 'P1', 'P2', 'P3'].includes(d.severity) ? d.severity : '';
+  const mock = meta.provider === 'mock' ? `<div class="mocknote"><b>模拟模式</b> —— 结论由内置规则生成，未调用真实大模型。${esc(meta.note || '')}</div>` : '';
+  return `${mock}<div><span class="sev ${level}">${esc(d.severity || '未分级')}</span> ${esc(d.summary || '')}</div>${causes ? `<h4>根因分析</h4><ul>${causes}</ul>` : ''}${actions ? `<h4>处置建议</h4><ul>${actions}</ul>` : ''}${patch}`;
 }
 
 async function pingMaas() {
-  toast('正在测试…');
+  if (pinging) return;
+  pinging = true;
+  $('pingButton').disabled = true;
+  $('pingButton').textContent = '测试中…';
   try {
-    const r = await api('/api/status/maas-ping', { method: 'POST' });
-    toast('大模型连通正常：' + r.reply);
+    const result = await api('/api/status/maas-ping', { method: 'POST' }, 90000);
+    toast((result.mock ? '模拟诊断可用：' : '大模型连通正常：') + result.reply);
   } catch (e) { toast('连通失败：' + e.message); }
+  finally { pinging = false; $('pingButton').disabled = false; $('pingButton').textContent = '测试大模型连通性'; }
 }
 
-loadStatus();
-load();
+function refresh() { return Promise.all([loadStatus(), load()]); }
+refresh();
+
 </script>
 </body>
 </html>
