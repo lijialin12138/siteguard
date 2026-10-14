@@ -9,13 +9,13 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import ai, scheduler, service
-from .config import MAAS_MODEL, maas_mode, maas_ready, mock_active
+from .config import API_TOKEN, MAAS_MODEL, maas_mode, maas_ready, mock_active
 from .db import init_db
 
 logging.basicConfig(
@@ -25,6 +25,24 @@ logging.basicConfig(
 logger = logging.getLogger("siteguard")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+# ---------------------------- API 鉴权 ----------------------------
+# 仅对 /api/* 生效；本地未设 API_TOKEN 时全部放行（不挡联调）。
+# 部署前在 .env 设 API_TOKEN 后，所有 /api 接口强制校验
+#   Authorization: Bearer <API_TOKEN>
+# 否则返回 401，防止站点被任意删除、MaaS 额度被外人烧。
+async def require_token(request: Request) -> None:
+    expected = API_TOKEN
+    if not expected:
+        return  # 本地放行
+    if not request.url.path.startswith("/api/"):
+        return  # 页面 / 文档 / 静态资源不拦截
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="缺少或格式错误的 Authorization 头")
+    if auth[len("Bearer "):].strip() != expected:
+        raise HTTPException(status_code=401, detail="token 无效")
 
 
 @asynccontextmanager
@@ -41,6 +59,7 @@ app = FastAPI(
     description="自动巡检企业网站，用 AI 定位问题根因并给出修复方案。",
     version="0.1.0",
     lifespan=lifespan,
+    dependencies=[Depends(require_token)],
 )
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

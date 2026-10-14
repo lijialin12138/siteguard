@@ -38,7 +38,13 @@ def _get_float(key: str, default: float) -> float:
 # ---------- 华为云 MaaS ----------
 MAAS_BASE_URL = _get("MAAS_BASE_URL", "https://你的API地址/v1")
 MAAS_API_KEY = _get("MAAS_API_KEY")
-MAAS_MODEL = _get("MAAS_MODEL", "DeepSeek-V3")
+MAAS_MODEL = _get("MAAS_MODEL", "deepseek-v4-flash")
+
+# ---------- API 鉴权（部署前启用） ----------
+# 留空 = 本地开发放行（不校验，方便联调）；部署上线前设一个随机串，
+# 所有 /api/* 接口将强制要求请求头 Authorization: Bearer <此值>，否则返回 401，
+# 防止站点被任意删除 / MaaS 额度被外人烧。
+API_TOKEN = _get("API_TOKEN")
 
 # ---------- 存储 ----------
 DATA_DIR = BASE_DIR / "data"
