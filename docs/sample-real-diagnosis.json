@@ -1,0 +1,89 @@
+{
+  "report": {
+    "url": "https://example.com",
+    "final_url": "https://example.com",
+    "status_code": 200,
+    "response_ms": 1820,
+    "ssl_days_left": 38,
+    "title": "Example Domain",
+    "description": "",
+    "h1_count": 1,
+    "images_total": 2,
+    "images_without_alt": 1,
+    "broken_links": [
+      {
+        "url": "https://example.com/old.html",
+        "status": 404,
+        "reason": "404 Not Found"
+      }
+    ],
+    "server_error_links": [],
+    "unverified_links": [
+      {
+        "url": "https://example.com/captcha",
+        "status": null,
+        "reason": "连接超时"
+      }
+    ],
+    "issues": [
+      {
+        "level": "P3",
+        "category": "seo",
+        "message": "页面缺少 meta description，影响搜索引擎收录质量"
+      },
+      {
+        "level": "P3",
+        "category": "performance",
+        "message": "首页响应耗时 1820ms，首字节偏慢"
+      },
+      {
+        "level": "P2",
+        "category": "ssl",
+        "message": "SSL 证书剩余 38 天，临近到期"
+      }
+    ],
+    "error": null,
+    "scanned_at": "2026-10-15T18:00:00"
+  },
+  "diagnosis": {
+    "summary": "站点可访问，存在多项待优化项：SSL临近到期、响应缓慢、一处死链。",
+    "severity": "P2",
+    "root_causes": [
+      {
+        "issue": "SSL 证书剩余38天，临近到期",
+        "reason": "证书自动续期未配置或手动续期未执行，存在过期风险"
+      },
+      {
+        "issue": "首页响应耗时1820ms，首字节偏慢",
+        "reason": "可能是后端处理延迟、数据库慢查询、或Web服务器配置不当（如未启用缓存、gzip等）"
+      },
+      {
+        "issue": "存在1个404死链（broken_link）：/old.html",
+        "reason": "该链接指向已删除或迁移的页面，未设置301重定向"
+      }
+    ],
+    "actions": [
+      {
+        "priority": 1,
+        "action": "续期SSL证书",
+        "how": "登录服务器，执行 'sudo certbot renew' 或检查自动续期定时任务是否正常；若手动续期，从证书提供商重新签发并部署"
+      },
+      {
+        "priority": 2,
+        "action": "优化页面加载性能",
+        "how": "检查服务器资源使用情况（CPU/内存），启用Nginx/ Apache的gzip压缩、浏览器缓存；分析后端代码和数据库查询，考虑使用CDN或升级服务器配置"
+      },
+      {
+        "priority": 3,
+        "action": "修复死链或添加301重定向",
+        "how": "确认 /old.html 是否已永久迁移，在Web服务器配置中添加301重定向到新URL；若内容已删除则返回410并去除链接"
+      }
+    ],
+    "patch": "location ~ ^/old(\\.html)?$ { return 301 https://example.com/new-page; }",
+    "_meta": {
+      "model": "deepseek-v4-flash",
+      "total_tokens": 1504
+    }
+  },
+  "daily_report_markdown": "# 每日运维简报（2026-10-15）\n\n## 一句话结论\n站点可访问，但存在 SSL 证书临近到期、首页响应缓慢及一处死链，需按优先级处理。\n\n## 关键指标\n- 状态码：200（正常）\n- 首页响应时间：1820 ms\n- SSL 证书剩余天数：38 天\n- 死链数量：1 个\n\n## 发现的问题（按严重程度排序）\n\n1. **P2 – SSL 证书临近到期**  \n   当前证书剩余 38 天，存在过期风险，可能影响站点 HTTPS 可用性。\n\n2. **P3 – 首页响应时间过长**  \n   首字节耗时 1820 ms，远高于理想值，影响用户体验和搜索引擎评分。\n\n3. **P3 – 存在 404 死链**  \n   链接 `https://example.com/old.html` 返回 404，该页面可能已删除或迁移，未设置 301 重定向。\n\n4. **P3 – 缺少 meta description**  \n   页面未定义 meta description，不利于搜索引擎收录质量（可择机优化）。\n\n## 建议的处置动作\n\n1. **续期 SSL 证书**  \n   - 登录服务器执行 `sudo certbot renew`，或检查自动续期定时任务是否生效。  \n   - 若为手动证书，请从提供商重新签发并部署。\n\n2. **优化页面加载性能**  \n   - 检查服务器 CPU/内存使用率，排查后端代码与数据库慢查询。  \n   - 启用 Nginx/Apache 的 gzip 压缩、浏览器缓存；考虑接入 CDN 或升级服务器配置。\n\n3. **修复死链或添加 301 重定向**  \n   - 确认 `/old.html` 是否已永久迁移。若存在新地址，在 Web 服务器配置中增加 301 重定向（示例配置如下）。  \n   - 若内容已删除，返回 410 并移除页面上的引用链接。  \n   ```nginx\n   location ~ ^/old(\\.html)?$ {\n       return 301 https://example.com/new-page;\n   }\n   ```\n\n4. 补充 meta description（低优先，可在下次内容更新时一并完成）。"
+}
