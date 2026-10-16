@@ -215,3 +215,30 @@ async def api_daily_report(scan_id: int):
     except RuntimeError:
         raise HTTPException(400, "MaaS 尚未配置，请检查项目根目录下的 .env 文件")
     return {"scan_id": scan_id, "markdown": markdown}
+
+
+@app.get("/api/scans/{scan_id}/patch", tags=["AI 诊断"])
+async def api_scan_patch(scan_id: int):
+    """取出某次巡检最新 AI 诊断里的修复补丁，给「修复闭环」前端一键复制用。
+
+    这是前端与模型输出之间的隔离层：无论模型侧返回的是新的 patches 列表
+    还是旧的 patch 字符串，这里统一成 patches 列表，前端只认这一个接口。
+    """
+    scan = service.get_scan(scan_id)
+    if not scan:
+        raise HTTPException(404, "巡检记录不存在")
+    diagnosis = service.get_latest_diagnosis(scan_id)
+    if not diagnosis:
+        raise HTTPException(400, "请先调用 /diagnose 生成 AI 诊断结论")
+
+    result = diagnosis["result"] or {}
+    return {
+        "scan_id": scan_id,
+        "site_id": scan.get("site_id"),
+        "diagnosis_id": diagnosis["id"],
+        "model": (result.get("_meta") or {}).get("model"),
+        "severity": result.get("severity"),
+        "summary": result.get("summary", ""),
+        "patches": service.extract_patches(result),   # 统一后的结构化补丁列表
+        "patch": result.get("patch", ""),             # 兼容字段：原始单段字符串
+    }

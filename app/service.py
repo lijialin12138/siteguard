@@ -211,6 +211,40 @@ def get_latest_diagnosis(scan_id: int) -> dict | None:
     return data
 
 
+# 修复补丁：把模型返回的补丁统一成固定结构，隔离「模型侧契约变化」对前端的影响。
+# 约定（见 docs/patch契约提案.md）：
+#   新契约 result["patches"] = [{"category","title","language","code"}, ...]
+#   旧契约 result["patch"]   = "单段字符串"（MOCK 与历史数据仍是这种）
+PATCH_FIELDS = ("category", "title", "language", "code")
+
+
+def extract_patches(result: dict) -> list[dict]:
+    """把诊断结果里的修复补丁统一成列表，兼容新旧两种契约。
+
+    无论模型侧用 patches 列表还是 patch 字符串，前端拿到的一定是
+    [{category, title, language, code}, ...]；没有补丁时返回空列表。
+    """
+    if not isinstance(result, dict):
+        return []
+
+    raw = result.get("patches")
+    patches: list[dict] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                patches.append({k: item.get(k) or "" for k in PATCH_FIELDS})
+            elif isinstance(item, str) and item.strip():
+                patches.append({"category": "other", "title": "修复片段", "language": "", "code": item})
+    if patches:
+        return patches
+
+    # 回退到旧契约的单段字符串
+    legacy = result.get("patch")
+    if isinstance(legacy, str) and legacy.strip():
+        return [{"category": "other", "title": "修复片段", "language": "", "code": legacy}]
+    return []
+
+
 async def diagnose_scan(scan_id: int) -> dict:
     """对某次巡检结果做 AI 诊断，并把结论存下来。"""
     from . import ai  # 延迟导入，避免没配 MaaS 时启动就报错
