@@ -5,10 +5,20 @@
 
 ## 状态说明（重要）
 
-- 本机**未找到**独立客户端 `D:\CodeArts Agent\`（仅存在扩展配置目录 `C:\Users\g'h'w\.codearts-doer-for-coding` / `.codeartsdoer`）。
-- 因此本文件给出**可直接粘贴进码道 CodeArts 的提示词**，由小甘在码道客户端里逐类跑一遍并**保留会话/日志截图**，
-  即可补齐证据链。下面每一类的「CodeArts 提示词」粘贴后，应要求其产出与 `app/ai.py` 中 `_MOCK_KNOWLEDGE` 等价的补丁片段，
+- 码道 CodeArts Agent **已安装**：`C:\Program Files\CodeArts Agent\codearts-agent.exe`
+  （启动入口；文档早期写的 `D:\CodeArts Agent\` 路径有误，以此为准）。
+- 本文件给出**可直接粘贴进码道 CodeArts 的提示词**，在码道客户端里逐类跑一遍并**保留会话/日志截图**，
+  即可补齐「用了华为技术」证据链。下面每一类的「CodeArts 提示词」粘贴后，应要求其产出与 `app/ai.py` 中 `_MOCK_KNOWLEDGE` 等价的补丁片段，
   用于交叉验证「AI 给出的补丁是否真能指导修复」。
+
+## 操作步骤（小甘照做）
+
+1. 双击 `C:\Program Files\CodeArts Agent\codearts-agent.exe` 打开码道（首次需登录华为云账号）。
+2. 新建一个会话（建议命名「SiteGuard D5 补丁生成留痕」）。
+3. 从下方「码道 CodeArts 提示词」里，**逐类复制一条**粘贴发送，等它生成补丁片段。
+4. 每类生成后，**对整段问答截图**（要同时看到你发的提示词 + 它回的补丁 `code`）。
+5. 截图存到 `docs/codearts-evidence/`（如 `ssl.png`、`broken_link.png` …），并在本文件末尾追加一行记录「类别 - 截图文件 - 日期」。
+6. 6 类全部跑完，把 `docs/codearts-evidence/` 截图随 PR 一并提交/展示，即完成证据链。
 
 ## 已落地的 patches（MOCK 侧，已由 `scripts/diagnose_demo.py` 验证）
 
