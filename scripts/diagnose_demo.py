@@ -7,7 +7,7 @@ from app import ai
 def main() -> int:
     print("=" * 60)
     print(f"密钥状态 : {'已配置' if ai.maas_ready() else '未配置'}")
-    print(f"运行模式 : {ai.maas_mode()} + {'[当前走内置模拟诊断，无需真实MaaS密钥]' if ai.mock_active() else '[当前调用真实华为云MaaS大模型]'}")
+    #print(f"运行模式 : {ai.maas_mode()} + {'[当前走内置模拟诊断，无需真实MaaS密钥]' if ai.mock_active() else '[当前调用真实华为云MaaS大模型]'}")
     print("=" * 60)
 
     if ai.mock_active():
@@ -60,7 +60,7 @@ def main() -> int:
             "response_ms": 240,
             "ssl_days_left": 3,
             "description": "",
-            "h1_count": 1,py scripts/diagnose_demo.py
+            "h1_count": 1,
             "images_total": 4,
             "images_without_alt": 0,
             "broken_links": [],
@@ -90,5 +90,7 @@ def main() -> int:
     print("\n[v] 全部用例执行完毕。")
     return 0
 
+
 if __name__ == "__main__":
     exit(main())
+

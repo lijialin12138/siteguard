@@ -1,15 +1,21 @@
 """AI 诊断层 —— 这是整个项目的灵魂。
 
 输入：scanner.py 产出的结构化体检报告
-输出：根因分析 + 严重等级 + 可执行的修复建议 + 修复补丁
+输出：根因分析 + 严重等级 + 可执行的修复建议 + 可落地的修复补丁（patches）
 
 模型走华为云 MaaS（ModelArts Studio），接口与 OpenAI 完全兼容，
 所以直接复用 openai 这个库，只需要把 base_url 指过去。
+
+D5 升级点（见 docs/patch契约提案.md）：
+- 诊断结果新增结构化补丁列表 `patches`（按问题类别各一段），旧字段 `patch` 保留做兜底。
+- 补丁按 issue.category 给出对应类型的、可直接复制落地的 bash/nginx/html 片段。
+- SYSTEM_PROMPT 增加硬约束：禁止编造不存在的文件路径/命令；link_unverified 只给复核命令、绝不给删除。
 """
 
 import json
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 from openai import AsyncOpenAI
 
@@ -26,21 +32,21 @@ def get_client() -> AsyncOpenAI:
     return _client
 
 
-SYSTEM_PROMPT = """你是一名资深的企业级网站运维工程师（SRE），擅长从监控数据中快速定位故障根因。
+SYSTEM_PROMPT = """你是一名资深的企业级网站运维工程师（SRE），擅长从监控数据中快速定位故障根因，并给出能直接落地的修复补丁。
 
 你会收到一份由自动化巡检程序生成的「网站体检报告」JSON，里面可能包含：
 站点地址、HTTP 状态码、响应耗时、SSL 证书剩余天数、
 页面基础信息（标题/描述/H1 数量/图片 alt 缺失数）、链接异常清单，
-以及程序依据规则初步标记的问题清单 issues。
+以及程序依据规则初步标记的问题清单 issues（每条带 level 与 category）。
 
 关于链接异常，报告里会分三类给出，含义严格不同，**不要混用**：
-- broken_link_count：对方明确返回 404/410（资源不存在）的失效链接，这才是真正需要修的「死链」；
-- link_server_error_count：返回 5xx 的链接，可能是服务端瞬时故障，未必是链接本身的问题；
-- link_unverified_count：连不上、被反爬拦截或被限流而无法验证的链接（403/429 属于这一类）。
+- broken_link：对方明确返回 404/410（资源不存在）的失效链接，这才是真正需要修的「死链」；
+- link_server_error：返回 5xx 的链接，多为服务端瞬时故障，未必是链接本身的问题；
+- link_unverified：连不上、被反爬拦截或被限流而无法验证的链接（403/429/超时属于这一类）。
   它们**不代表链接失效**——403/429 表示「拒绝服务」而非「不存在」，浏览器往往能正常打开。
   不要在结论里把它们说成死链，只能提示人工确认或稍后复测。
 
-你的任务：像一名真正的运维工程师那样分析这份报告，给出诊断结论。
+你的任务：像一名真正的运维工程师那样分析这份报告，给出诊断结论，并产出可执行的修复补丁。
 
 严格遵守以下输出要求：
 1. 只输出一个 JSON 对象。不要输出任何解释性文字，不要用 markdown 代码块包裹。
@@ -54,13 +60,28 @@ SYSTEM_PROMPT = """你是一名资深的企业级网站运维工程师（SRE）�
   "actions": [
     {"priority": 1, "action": "要做什么", "how": "具体怎么操作，必须可执行"}
   ],
-  "patch": "如果有配置或代码层面的修复片段就写在这里（例如 Nginx 配置、HTML 标签修正、证书续期命令），没有则填空字符串"
+  "patches": [
+    {
+      "category": "必须与 issues 中真实出现的 category 一致，如 ssl / performance / broken_link / seo",
+      "title": "一句话说明这段补丁在干什么",
+      "language": "代码高亮语言：bash / nginx / html / json，纯文本留空串",
+      "code": "可直接复制粘贴到服务器执行的代码/配置片段，不要带多余解释"
+    }
+  ],
+  "patch": "兼容字段：把上面 patches 里的关键段合并成一段纯文本，方便老前端兜底渲染"
 }
 3. root_causes 和 actions 都要按重要性从高到低排序，最多各 3 条。
-4. 严禁编造报告中不存在的数据。信息不足以判断时，在 reason 里说明还需要补充哪些信息。
-5. 全部用中文回答。
-6. actions 里的 how 要具体到可操作，例如"登录域名服务商控制台，为该域名开启自动续期"，
-   而不是"建议检查证书"这种空话。"""
+4. patches 为每个真实存在的问题类别各给一段补丁，按 severity 从高到低排列；
+   只有报告里确实存在的问题类别才给补丁，**禁止编造报告里不存在的问题或配置**。
+5. 严禁编造报告中不存在的数据，也严禁编造不存在的文件路径 / 命令 / 域名。
+   无法确定确定性补丁时（例如需要业务上下文才能决定的改动），该类别就不放入 patches，
+   并在对应 action 的 how 里说明还需补充哪些信息，绝不瞎编一段看似可用的代码。
+6. 特别约束：
+   - link_unverified 类的补丁只能是「复核 / 人工确认」类命令，**绝不能给「删除链接」**，
+     因为 403/429/超时不等于死链，误删会烧掉客户的真实链接。
+   - link_server_error 类先给「复测」命令，确认是瞬时故障；只有复测仍 5xx 且确为死链，
+     才在说明里给出替换 / 301 示例，不要上来就删。
+7. 全部用中文回答（代码注释可用中文）。"""
 
 REPORT_SYSTEM_PROMPT = """你是一名企业运维团队的技术负责人，负责向管理层汇报网站运行状况。
 你会收到一份巡检报告和它的 AI 诊断结论，请把它们整理成一份简洁、专业、可直接发给团队的每日运维简报。
@@ -113,6 +134,7 @@ def _slim_report(report: dict) -> dict:
         "link_server_error_count": len(link_5xx),
         "link_server_error_samples": [b.get("url") for b in link_5xx[:5]],
         "link_unverified_count": len(unverified),
+        "link_unverified_samples": [b.get("url") for b in unverified[:5]],
         "issues": report.get("issues") or [],
         "fetch_error": report.get("error"),
         "scanned_at": report.get("scanned_at"),
@@ -122,13 +144,12 @@ def _slim_report(report: dict) -> dict:
 # ============================================================
 #  内置模拟诊断（MOCK）
 # ------------------------------------------------------------
-#  没有真实 API Key 也能把「巡检 → 诊断」整条链路跑通。
-#  它不是随便编一段话：会读取真实巡检报告里的 issues，
-#  按问题类别给出对应的根因判断和可执行处置建议，
-#  输出的结构与真实模型完全一致，前端无需区别对待。
+#  没有真实 API Key 也能把「巡检 → 诊断 → 修复补丁」整条链路跑通。
+#  它不是随便编一段话：会读取真实巡检报告里的 issues，按 11 个问题类别给出
+#  对应的根因判断、可执行处置建议、以及可落地（复制即用）的修复补丁片段。
+#  输出的结构与真实模型完全一致（含 patches 数组），前端无需区别对待。
 #
-#  正式提交/录演示视频前，把 .env 里的 MAAS_MODE 设为 off，
-#  确保走的是真实大模型。
+#  正式提交/录演示视频前，把 .env 里的 MAAS_MODE 设为 off，确保走的是真实大模型。
 # ============================================================
 
 MOCK_PROVIDER = "mock-diagnosis"
@@ -136,142 +157,237 @@ MOCK_WARNING = "⚠️ 本结论由内置模拟诊断生成，未调用真实大
 
 _LEVEL_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
-# 类别 -> (根因判断, 处置动作, 具体怎么做, 修复片段)
-_MOCK_KNOWLEDGE: dict[str, tuple[str, str, str, str]] = {
-    "availability": (
-        "站点在超时时间内完全没有响应。常见原因是 Web 服务进程已退出、DNS 解析异常，"
-        "或云上安全组 / 防火墙拦掉了 443 端口的入站流量。",
-        "恢复站点可用性",
-        "登录服务器执行 systemctl status nginx 确认进程状态；在服务器本机执行 curl -I http://127.0.0.1/ "
-        "区分『服务挂了』还是『网络不通』；再检查云主机安全组的 80/443 入方向规则是否放行。",
-        "# 三段式排查：进程 → 本机访问 → 外部网络\n"
-        "systemctl status nginx\n"
-        "curl -I http://127.0.0.1/\n"
-        "curl -I https://你的域名",
-    ),
-    "server_error": (
-        "服务端返回 5xx，说明请求已经到达后端但处理过程抛出了异常，"
-        "通常是应用报错、上游依赖（数据库/缓存）不可用，或 PHP/Java 进程资源耗尽。",
-        "定位后端异常并恢复服务",
-        "查 Nginx 与应用的错误日志（/var/log/nginx/error.log、应用的 error log），"
-        "重点看 5xx 前后 1 分钟内的堆栈；同时确认数据库连接数是否打满、磁盘是否写满。",
-        "# 按时间窗口捞异常日志\n"
-        "tail -n 200 /var/log/nginx/error.log\n"
-        "df -h && free -m",
-    ),
-    "client_error": (
-        "页面返回 4xx，多数是资源路径被改动后没做重定向，或权限配置把正常访客也挡在了外面。",
-        "修正失效路径或权限规则",
-        "在浏览器开发者工具的 Network 面板确认具体是哪个 URL 返回 4xx；"
-        "如果是页面被改名，加一条 301 永久重定向；如果是 403，检查目录权限与 Nginx deny 规则。",
-        "# 为已改名的旧路径补 301，保住既有搜索权重\n"
-        "location = /old-page.html { return 301 /new-page.html; }",
-    ),
-    "redirect": (
-        "存在 HTTP 跳转，单次跳转本身无害，但如果 HTTP→HTTPS 与 www→裸域各跳一次，"
-        "移动端首屏会多出一个 RTT，也会分散搜索权重。",
-        "合并跳转链路为一跳",
-        "先用 curl -I 观察完整跳转链，再把 Nginx 里的 HTTP 与 www 规则合并，"
-        "直接 301 到最终主域名，避免二次跳转。",
-        "# 一次性跳到最终地址，不要中间再跳一次\n"
-        "server {\n"
-        "    listen 80;\n"
-        "    server_name 你的域名 www.你的域名;\n"
-        "    return 301 https://你的域名$request_uri;\n"
-        "}",
-    ),
-    "performance": (
-        "首页响应耗时偏高。后端首字节时间长（TTFB 高）通常是数据库慢查询或未加缓存；"
-        "如果 TTFB 正常但总时间长，则是图片、JS 体积过大且未启用压缩缓存。",
-        "先压低首字节时间，再做静态资源优化",
-        "在服务器上用 curl -o /dev/null -s -w '%{time_starttransfer}' 测 TTFB：超过 0.6s 就是后端问题，"
-        "优先加 Redis 缓存和慢查询索引；TTFB 正常则开启 Nginx gzip 并为静态资源设置长缓存。",
-        "# Nginx：开启 gzip + 静态资源长缓存\n"
-        "gzip on;\n"
-        "gzip_types text/css application/javascript application/json image/svg+xml;\n"
-        "location ~* \\.(js|css|png|jpg|jpeg|webp|svg|woff2)$ {\n"
-        "    expires 30d;\n"
-        "    add_header Cache-Control \"public\";\n"
-        "}",
-    ),
-    "ssl": (
-        "HTTPS 证书临近到期。企业站点最典型的事故就是证书过期，"
-        "一旦过期浏览器会直接弹出安全警告拦截访问，用户流失会非常明显。",
-        "完成证书续期并配置自动续期",
-        "登录域名服务商或 CA 控制台确认证书到期日，完成续期与重新部署；"
-        "同时用 certbot 配置定时自动续期，避免下个周期重演。",
-        "# 续期并开启自动续期（Let's Encrypt + Nginx）\n"
-        "sudo certbot renew --dry-run\n"
-        "sudo systemctl enable --now certbot.timer\n"
-        "sudo nginx -t && sudo systemctl reload nginx",
-    ),
-    "broken_link": (
-        "存在指向 404/410 的站内链接——对方服务器明确回应该资源不存在，"
-        "通常是页面改版或文章下线后忘记同步更新链接，"
-        "既影响访客体验，也会让搜索引擎判定站点质量下降。",
-        "清理死链并补上重定向",
-        "用爬虫工具导出全部 4xx 链接清单，逐条判断：有效内容就补 301 到新地址，"
-        "已下线的就从页面里摘掉；同时在 CMS 里增加发布前链接检查。",
-        "# 导出站内 4xx 链接清单\n"
-        "wget --spider -r -nd -nv -o spider.log https://你的域名\n"
-        "grep -E \" 40[0-9] | 50[0-9] \" spider.log",
-    ),
-    "link_server_error": (
-        "被链接的页面返回 5xx，说明请求已经到达对方服务器但处理失败。"
-        "注意这类错误往往是瞬时的（对方重启、限流、上游依赖故障），"
-        "不能直接判定链接失效——应当先复测确认是否持续存在。",
-        "复测确认后再决定是否整改",
-        "对这批链接间隔一段时间复测 2–3 次：若恢复 2xx 说明是对方瞬时故障，无需处理；"
-        "若持续 5xx，再联系对方站点负责人或从本页面暂时摘除；"
-        "如果对方是本单位的另一个业务系统，直接查它的应用日志。",
-        "# 对单个可疑链接连续复测，确认是否持续失败\n"
-        "for i in 1 2 3; do\n"
-        "    curl -o /dev/null -s -w \"%{http_code}\\n\" https://可疑链接\n"
-        "    sleep 5\n"
-        "done",
-    ),
-    "link_unverified": (
-        "这批链接在巡检时没能拿到有效响应，常见原因是对方做了反爬拦截、"
-        "要求登录、**对短时间内的高频请求限流**，或者网络临时不通。"
-        "**它们并不等于失效链接**，只是自动化程序无法确认，需要人工抽查。"
-        "特别注意 403/429：这两个状态码表示『拒绝服务』而不是『资源不存在』，"
-        "浏览器往往能正常打开。",
-        "人工抽查确认，不要直接删除",
-        "从清单里随机挑几条在浏览器里打开：能正常访问说明是反爬拦截，"
-        "这类链接应从巡检结果里剔除，避免制造噪音；真打不开的才需要跟进。",
-        "# 逐条复核：浏览器能打开 = 反爬拦截（误报），打不开 = 真问题\n"
-        "for u in $(cat unverified.txt); do\n"
-        "    printf '%-70s' \"$u\"\n"
-        "    curl -o /dev/null -s -w '%{http_code}\\n' -A 'Mozilla/5.0' \"$u\"\n"
-        "done",
-    ),
-    "seo": (
-        "页面缺少 title / meta description / H1 等基础标签。"
-        "这不影响用户访问，但会明显影响搜索引擎收录质量与点击率。",
-        "补齐页面基础 SEO 标签",
-        "为每个页面补一个独一无二的 title（品牌词 + 业务词，30 字以内）和 description"
-        "（60–120 字，含地域与核心产品词），并保证每页有且仅有一个 H1。",
-        "<!-- 补齐 <head> 内的基础 SEO 标签 -->\n"
-        "<title>企业名称 - 主营业务一句话描述</title>\n"
-        "<meta name=\"description\" content=\"用 60–120 字概括本站核心业务，包含关键地域与产品词。\">\n"
-        "<!-- 正文中每页有且仅有一个 H1 -->\n"
-        "<h1>页面主标题</h1>",
-    ),
-    "accessibility": (
-        "部分内容图片缺少 alt 文本描述，使用读屏软件的视障用户无法获知图片承载的信息，"
-        "这也是无障碍改造中最常见、最容易整改的一项。",
-        "为内容图片补充 alt 描述",
-        "区分图片性质：承载信息的图片写一句能说明其内容的 alt；纯装饰性图片写空 alt=\"\"，"
-        "让读屏软件直接跳过，而不是把文件名念出来。",
-        "<!-- 内容图写清楚，装饰图留空 -->\n"
-        "<img src=\"banner.jpg\" alt=\"2026 年春季新品发布会现场\">\n"
-        "<img src=\"divider.png\" alt=\"\">",
-    ),
+# 每个问题类别对应的「根因 / 处置动作 / 操作步骤 / 补丁片段」。
+# patch 是一个 dict：{title, language, code}，其中 code 用 {url}/{host} 占位，
+# 运行时按真实报告里的样本地址替换，保证补丁可落地、不编造路径。
+# 这些片段是确定性的运维/前端常识（certbot、nginx gzip、html head 等），非凭空捏造。
+_MOCK_KNOWLEDGE: dict[str, dict] = {
+    "availability": {
+        "root_cause": "站点无响应，通常是 Web 服务进程挂掉、端口未监听或网络/DNS 不通。",
+        "action": "按网络层→HTTP 层→服务层顺序排查并恢复可用性",
+        "how": "1．ping 域名确认网络连通；2．curl -I 看 HTTP 返回；3．登录服务器 systemctl status 看服务是否在跑；4．拉起服务并看错误日志定位根因。",
+        "patch": {
+            "title": "排查并恢复站点可用性",
+            "language": "bash",
+            "code": (
+                "# 1) 网络层连通性\n"
+                "ping -c 4 {host}\n"
+                "# 2) HTTP 层返回（绕过本地缓存）\n"
+                "curl -I https://{host}\n"
+                "# 3) 登录服务器后看 Web 服务状态\n"
+                "systemctl status nginx --no-pager\n"
+                "# 4) 拉起服务并看最近报错\n"
+                "journalctl -u nginx -n 50 --no-pager"
+            ),
+        },
+    },
+    "server_error": {
+        "root_cause": "服务端返回 5xx，多为后端异常、依赖超时、或资源耗尽（CPU/内存/连接数）。",
+        "action": "捞取服务端错误日志，定位 5xx 根因",
+        "how": "1．看 Nginx/应用错误日志最近 50 条；2．确认是否有近期发布或依赖故障；3．按日志里的堆栈/报错修复后复测。",
+        "patch": {
+            "title": "捞取服务端错误日志，定位 5xx 根因",
+            "language": "bash",
+            "code": (
+                "# Nginx 错误日志\n"
+                "journalctl -u nginx -n 50 --no-pager\n"
+                "# 或\n"
+                "tail -n 50 /var/log/nginx/error.log\n"
+                "# 应用层日志（以 systemd 托管的 Python/Node 服务为例）\n"
+                "journalctl -u myapp -n 50 --no-pager"
+            ),
+        },
+    },
+    "client_error": {
+        "root_cause": "页面返回 4xx（非 404 死链），常见于旧路径未做 301、或静态资源权限/路由配置问题。",
+        "action": "补全 301 重定向 / 修正访问权限",
+        "how": "1．确认是否旧路径迁移；2．在 Nginx 给旧路径加 301 到新地址；3．若是权限问题，修正文件/目录权限与 location 规则。",
+        "patch": {
+            "title": "补全 301 重定向 / 修正访问权限",
+            "language": "nginx",
+            "code": (
+                "# 把旧路径 301 到新路径（避免 404 影响 SEO 与用户）\n"
+                "server {\n"
+                "    listen 80;\n"
+                "    server_name example.com;\n"
+                "    location = /old-path {\n"
+                "        return 301 https://example.com/new-path;\n"
+                "    }\n"
+                "}"
+            ),
+        },
+    },
+    "redirect": {
+        "root_cause": "存在多余跳转（如 http→https 与 www/非 www 分两步），延长首字节时间、不利 SEO。",
+        "action": "合并多余跳转，减少 301 链",
+        "how": "1．确认目标域名（带不带 www）；2．在 Nginx 把 http 与 www 跳转合并成一次 301。",
+        "patch": {
+            "title": "合并多余跳转，减少 301 链",
+            "language": "nginx",
+            "code": (
+                "# http + www 一次性跳到 https 裸域\n"
+                "server {\n"
+                "    listen 80;\n"
+                "    server_name www.example.com;\n"
+                "    return 301 https://example.com$request_uri;\n"
+                "}"
+            ),
+        },
+    },
+    "performance": {
+        "root_cause": "响应偏慢，常见于未启用 gzip 压缩、静态资源无缓存、或后端未做查询/缓存优化。",
+        "action": "开启 gzip 压缩与静态资源长缓存",
+        "how": "1．在 Nginx 开启 gzip 并限定类型；2．给带 hash 的静态资源设长缓存；3．必要时接入 CDN 或优化后端慢查询。",
+        "patch": {
+            "title": "开启 gzip 压缩与静态资源缓存",
+            "language": "nginx",
+            "code": (
+                "# /etc/nginx/conf.d/performance.conf\n"
+                "gzip on;\n"
+                "gzip_types text/css application/javascript application/json image/svg+xml;\n"
+                "gzip_min_length 1024;\n"
+                "\n"
+                "# 静态资源长缓存（文件名带 hash 的可长期缓存）\n"
+                "location ~* \\.(js|css|png|jpg|svg|woff2)$ {\n"
+                "    expires 30d;\n"
+                "    add_header Cache-Control \"public, immutable\";\n"
+                "}"
+            ),
+        },
+    },
+    "ssl": {
+        "root_cause": "SSL 证书临近到期或已过期，多为自动续期未配置 / 手动续期漏执行。",
+        "action": "续期证书并配置自动续期",
+        "how": "1．服务器安装 certbot；2．执行证书申请/续期命令（自动改写 Nginx 配置）；3．配置定时任务自动续期并 dry-run 校验。",
+        "patch": {
+            "title": "证书续期并配置自动续期",
+            "language": "bash",
+            "code": (
+                "# 安装 certbot（Debian/Ubuntu）\n"
+                "sudo apt install certbot python3-certbot-nginx\n"
+                "# 申请 / 续期证书（自动改写 Nginx 配置）\n"
+                "sudo certbot --nginx -d example.com -d www.example.com\n"
+                "# 校验自动续期定时任务是否生效\n"
+                "sudo certbot renew --dry-run\n"
+                "# 加入 crontab：每月 1 号 03:00 续期（失败时重载 Nginx）\n"
+                "0 3 1 * * certbot renew --quiet --post-hook \"nginx -s reload\""
+            ),
+        },
+    },
+    "broken_link": {
+        "root_cause": "页面内存在高优先级失效链接（已确认 404/410，资源确实不存在），用户点击无法访问。",
+        "action": "修正失效超链接",
+        "how": "1．定位网页中失效的 a 标签；2．把 href 改为正确地址，或在新地址部署 301；3．重新发布页面后复测。",
+        "patch": {
+            "title": "修正失效超链接",
+            "language": "html",
+            "code": (
+                "<!-- 失效链接（已确认 404/410，资源确不存在）：{url} -->\n"
+                "<!-- 在页面源码里把失效的 a 标签改到正确地址 -->\n"
+                '<a href="https://正确地址">链接文本</a>\n'
+                "<!-- 推荐：在 Nginx 加 301 跳转到新地址 -->\n"
+                "<!-- location = /old-path { return 301 https://正确地址; } -->"
+            ),
+        },
+    },
+    "link_server_error": {
+        "root_cause": "有链接返回 5xx，绝大多数是目标服务端瞬时故障，未必是链接本身失效。",
+        "action": "先复测确认是否瞬时故障，确为死链再修",
+        "how": "1．用浏览器 UA 复测 3 次；2．若持续 5xx 且确为死链，再把页面 a 标签改到可用地址或加 301；3．短暂 5xx 不必动。",
+        "patch": {
+            "title": "对 5xx 链接复测，确认是否瞬时故障",
+            "language": "bash",
+            "code": (
+                "# 该链接返回 5xx，多为服务端瞬时故障。先用浏览器 UA 复测 3 次确认：\n"
+                'for i in 1 2 3; do\n'
+                '  curl -A "Mozilla/5.0" -s -o /dev/null -w "%{http_code}\\n" "{url}"\n'
+                "  sleep 5\n"
+                "done\n"
+                "# 若复测持续 5xx 且确为死链，再把页面 <a href=\"{url}\"> 改为可用地址，\n"
+                "# 或在 Nginx 加 301：location = /old { return 301 https://新地址; }"
+            ),
+        },
+    },
+    "link_unverified": {
+        "root_cause": "链接无法验证（403/429/超时），通常是反爬或限流，浏览器往往能正常打开，不等于链接失效。",
+        "action": "先复核确认，切勿急于删除链接",
+        "how": "1．用浏览器 UA 复核该链接；2．若浏览器也能正常打开则无需处理；3．仅当确为死链才改 a 标签或加 301，严禁直接删除。",
+        "patch": {
+            "title": "对无法验证的链接复核（切勿急于删除）",
+            "language": "bash",
+            "code": (
+                "# 该链接无法验证（403/429/超时），多为反爬或限流，浏览器通常能正常打开。\n"
+                "# 先复核，不要当死链删：\n"
+                'curl -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -s -o /dev/null -w "%{http_code}\\n" "{url}"\n'
+                "# 仅当浏览器也无法打开、确为死链时，才改 <a href> 或加 301。切勿直接删除链接。"
+            ),
+        },
+    },
+    "seo": {
+        "root_cause": "页面缺少 title / meta description / H1 等基础 SEO 标签，影响搜索引擎收录与排名。",
+        "action": "补全页面 <head> 基础 SEO 标签",
+        "how": "1．在 <head> 补 title 与 meta description；2．正文确保有且仅有 1 个 H1；3．发布后复测。",
+        "patch": {
+            "title": "补全页面 <head> 基础 SEO 标签",
+            "language": "html",
+            "code": (
+                "<head>\n"
+                '  <title>页面标题（建议 ≤ 60 字，含核心关键词）</title>\n'
+                '  <meta name="description" content="一句话描述本页内容，建议 ≤ 120 字">\n'
+                "  <!-- 页面正文需有且仅有 1 个 H1 -->\n"
+                "</head>\n"
+                "<!-- 正文示例：<h1>主标题</h1> -->"
+            ),
+        },
+    },
+    "accessibility": {
+        "root_cause": "部分图片缺少 alt 描述，屏幕阅读器无法识别，影响无障碍合规与 SEO。",
+        "action": "为图片补全 alt 描述",
+        "how": "1．给每张内容图加 alt 描述其含义；2．纯装饰性图片用 alt=\"\"；3．发布后复测。",
+        "patch": {
+            "title": "为图片补全 alt 描述",
+            "language": "html",
+            "code": (
+                '<!-- 给每张图加 alt，描述图片内容（装饰性图片用 alt=""） -->\n'
+                '<img src="/img/banner.png" alt="产品主视觉横幅">'
+            ),
+        },
+    },
 }
 
 
+def _host_of(report: dict) -> str:
+    """从报告 URL 取出 host，用于 availability 类补丁占位。"""
+    url = report.get("final_url") or report.get("url") or ""
+    try:
+        host = urlparse(url).netloc or urlparse("//" + url).netloc
+    except Exception:
+        host = ""
+    return host or "example.com"
+
+
+def _sample_url(report: dict, category: str) -> str:
+    """取该类别第一个样本链接地址，用于 broken_link / link_server_error / link_unverified 的补丁占位。"""
+    mapping = {
+        "broken_link": report.get("broken_links") or [],
+        "link_server_error": report.get("server_error_links") or [],
+        "link_unverified": report.get("unverified_links") or [],
+    }
+    items = mapping.get(category)
+    if items:
+        return items[0].get("url", "")
+    return ""
+
+
+def _fill_patch(code: str, report: dict, category: str) -> str:
+    """把补丁模板里的 {url}/{host} 占位替换成报告里的真实样本地址。"""
+    code = code.replace("{url}", _sample_url(report, category) or "<链接地址>")
+    code = code.replace("{host}", _host_of(report))
+    return code
+
+
 def _mock_diagnose(report: dict) -> dict:
-    """基于规则问题清单生成一份结构化的模拟诊断结论。"""
+    """基于规则问题清单给出一份模拟诊断结论（含结构化 patches 补丁）。"""
     issues = sorted(
         report.get("issues") or [],
         key=lambda i: _LEVEL_ORDER.get(i.get("level", "P3"), 3),
@@ -290,13 +406,14 @@ def _mock_diagnose(report: dict) -> dict:
                     "how": "维持每 30 分钟一次的自动巡检，并关注响应耗时的趋势变化，先于故障发现劣化。",
                 }
             ],
+            "patches": [],
             "patch": "",
             "_meta": {"model": MOCK_PROVIDER, "provider": "mock", "total_tokens": 0, "note": MOCK_WARNING},
         }
 
     severity = issues[0].get("level", "P3")
 
-    # 按类别去重，同类问题只保留最严重的那条
+    # 按类别去重，同类问题只保留最严重的那条（最多 3 条，已按 severity 排序）
     picked: list[dict] = []
     seen: set[str] = set()
     for issue in issues:
@@ -308,29 +425,38 @@ def _mock_diagnose(report: dict) -> dict:
         if len(picked) == 3:
             break
 
-    root_causes = []
-    actions = []
+    root_causes: list[dict] = []
+    actions: list[dict] = []
+    patches: list[dict] = []
+
     for idx, issue in enumerate(picked):
         cat = issue.get("category", "other")
-        reason, action, how, _patch = _MOCK_KNOWLEDGE.get(
-            cat,
-            (
-                "该项需要结合业务上下文进一步判断。",
-                f"跟进处理：{issue.get('message', '')}",
-                "补充近期变更记录与访问日志后再做定位。",
-                "",
-            ),
-        )
-        root_causes.append({"issue": issue.get("message", ""), "reason": reason})
-        actions.append({"priority": idx + 1, "action": action, "how": how})
+        kn = _MOCK_KNOWLEDGE.get(cat)
+        if kn:
+            root_causes.append({"issue": issue.get("message", ""), "reason": kn["root_cause"]})
+            actions.append({"priority": idx + 1, "action": kn["action"], "how": kn["how"]})
+            patches.append(
+                {
+                    "category": cat,
+                    "title": kn["patch"]["title"],
+                    "language": kn["patch"]["language"],
+                    "code": _fill_patch(kn["patch"]["code"], report, cat),
+                }
+            )
+        else:
+            root_causes.append(
+                {"issue": issue.get("message", ""), "reason": "该项需要结合业务上下文进一步判断。"}
+            )
+            actions.append(
+                {
+                    "priority": idx + 1,
+                    "action": f"跟进处理：{issue.get('message', '')}",
+                    "how": "补充近期变更记录与访问日志后再做定位。",
+                }
+            )
 
-    # 修复片段取第一个有现成代码的类别
-    patch = ""
-    for issue in picked:
-        candidate = _MOCK_KNOWLEDGE.get(issue.get("category", ""), ("", "", "", ""))[3]
-        if candidate:
-            patch = candidate
-            break
+    # 兼容字段：把 patches 合并成一段纯文本，方便老前端兜底渲染
+    patch_single = "\n\n".join(p["code"] for p in patches)
 
     top_msg = issues[0].get("message", "")
     levels = sorted({i.get("level", "P3") for i in issues}, key=lambda x: _LEVEL_ORDER.get(x, 3))
@@ -341,13 +467,14 @@ def _mock_diagnose(report: dict) -> dict:
         "severity": severity,
         "root_causes": root_causes,
         "actions": actions,
-        "patch": patch,
+        "patches": patches,
+        "patch": patch_single,
         "_meta": {"model": MOCK_PROVIDER, "provider": "mock", "total_tokens": 0, "note": MOCK_WARNING},
     }
 
 
 def _mock_daily_report(report: dict, diagnosis: dict) -> str:
-    """把模拟诊断整理成 Markdown 简报，结构与真实模型输出保持一致。"""
+    """把模拟诊断整理成 Markdown 简报，优先渲染 patches 多段补丁。"""
     url = report.get("final_url") or report.get("url") or "—"
     issues = sorted(
         report.get("issues") or [],
@@ -394,7 +521,19 @@ def _mock_daily_report(report: dict, diagnosis: dict) -> str:
     else:
         lines.append("暂无需要立即处置的动作。")
 
-    if diagnosis.get("patch"):
+    # 优先渲染 patches 多段补丁，回退到旧 patch 单段
+    patches = diagnosis.get("patches") or []
+    if patches:
+        lines += ["", "## 修复片段", ""]
+        for p in patches:
+            lang = p.get("language") or ""
+            lines.append(f"### [{p.get('category', '')}] {p.get('title', '')}")
+            lines.append("")
+            lines.append(f"```{lang}")
+            lines.append(p.get("code", ""))
+            lines.append("```")
+            lines.append("")
+    elif diagnosis.get("patch"):
         lines += ["", "## 修复片段", "", "```", diagnosis["patch"], "```"]
 
     return "\n".join(lines) + "\n"
@@ -425,6 +564,7 @@ async def diagnose(report: dict) -> dict:
     )
     content = resp.choices[0].message.content or ""
     result = _extract_json(content)
+    # 真实模型可能直接给 patches 数组；若只给了旧 patch 字段，保持原样交给后端 extract_patches 统一
     result["_meta"] = {
         "model": MAAS_MODEL,
         "total_tokens": getattr(resp.usage, "total_tokens", None),
