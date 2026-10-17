@@ -16,7 +16,7 @@
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.7;
     font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;}
-  .wrap{max-width:1080px;margin:0 auto;padding:28px 22px 70px;}
+  .wrap{max-width:1440px;margin:0 auto;padding:20px 22px 40px;}
   header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px;}
   h1{font-size:20px;margin:0;font-weight:700;}
   .sub{color:var(--ink3);font-size:12.5px;}
@@ -29,6 +29,11 @@
     border-radius:8px;padding:8px 11px;font-size:12.5px;line-height:1.6;margin-bottom:10px;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:14px;}
   .card h2{font-size:14px;margin:0 0 12px;font-weight:700;}
+  #authPanel summary{cursor:pointer;font-weight:700;}
+  #authForm{margin-top:12px;}
+  #authForm label{font-size:13px;}
+  #apiToken{flex:1;min-width:160px;}
+  #authStatus{margin:8px 0 0;font-size:12.5px;overflow-wrap:anywhere;}
   input{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);outline:none;}
   input:focus{border-color:var(--accent);}
   button{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--line);
@@ -88,6 +93,39 @@
   .issue-hint{color:var(--ink3);font-size:12px;margin:8px 0 0;}
   .inline-error{overflow-wrap:anywhere;}
   .inline-error p{margin:0 0 8px;}
+  .dashboard{display:grid;grid-template-columns:minmax(320px,.9fr) minmax(0,1.2fr);gap:18px;align-items:start;}
+  .dashboard-main{min-width:0;}
+  #grid{grid-template-columns:minmax(0,1fr);max-height:76vh;overflow:auto;padding:2px;align-content:start;}
+  .site.selected{outline:2px solid var(--accent);outline-offset:-1px;}
+  .site-picker{padding:0;border:0;font-weight:700;text-align:left;font-size:14.5px;}
+  .health-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:var(--ink3);}
+  .health-dot.ok{background:var(--ok);}.health-dot.bad{background:var(--bad);}
+  .health-label{font-size:12px;font-weight:400;}
+  #trendChart{height:190px;}#trendCard{margin-bottom:14px;padding:14px 18px;}
+  #adviceBody{max-height:54vh;overflow:auto;padding:2px;}
+  .advice-summary{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);margin-bottom:10px;}
+  .advice-details summary{cursor:pointer;color:var(--accent);font-weight:700;}
+  .patch-card{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;}
+  .patch-card h4{margin:0;font-size:13px;color:var(--ink);}.patch-card pre{max-height:220px;margin-bottom:6px;}
+  .patch-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+  .verification{border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:12px;background:var(--bg);}
+  .comparison-list{padding-left:18px;}.comparison-list li{margin:7px 0;overflow-wrap:anywhere;}
+  .comparison-list .resolved{color:var(--ok);}.comparison-list .remaining,.comparison-list .worsened{color:var(--bad);}
+  .manual-copy{width:100%;min-height:140px;font:12px/1.6 Consolas,monospace;white-space:pre;}
+  @media(min-width:851px){
+    .bar{margin:10px 0 12px;}.wrap>.card{padding:12px 16px;margin-bottom:12px;}
+    #authPanel{padding:8px 14px;margin-bottom:10px;}
+    .dashboard{height:calc(100dvh - 325px);min-height:350px;grid-template-rows:minmax(0,1fr);align-items:stretch;}
+    .dashboard>section{display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+    #grid{height:auto;max-height:none;flex:1;min-height:0;}
+    .dashboard-main{display:grid;grid-template-rows:210px minmax(0,1fr);gap:14px;height:100%;min-height:0;}
+    #trendCard{margin:0;padding:10px 14px;overflow:auto;}#trendChart{height:100px;}
+    #trendCard h2{margin-bottom:4px;}.trend-toolbar{margin:4px 0;}
+    #trendCard>p.sub:first-of-type{display:none;}#trendSummary{margin:4px 0;line-height:1.5;}
+    #adviceCard{display:flex;flex-direction:column;min-height:0;margin:0;padding:12px 16px;}
+    #adviceBody{flex:1;min-height:0;max-height:none;}
+  }
+  @media(max-width:850px){.dashboard{grid-template-columns:minmax(0,1fr);}#grid{max-height:none;}#adviceBody{max-height:none;}}
   @media(max-width:480px){.wrap{padding:18px 12px 40px;}.grid{grid-template-columns:minmax(0,1fr);}.row input{width:100%!important;}.site{min-width:0;padding:14px;}.metrics{gap:10px;}#trendChart{height:240px;}.trend-toolbar select{width:100%;}}
   pre{background:#f3f4f7;border:1px solid var(--line);border-radius:8px;padding:12px;
     overflow:auto;font-size:12.5px;line-height:1.6;font-family:Consolas,Menlo,monospace;}
@@ -102,6 +140,7 @@
   .diag li{margin-bottom:4px;}
   .diag li i{font-style:normal;color:var(--ink3);}
   #toast{position:sticky;bottom:0;margin-top:16px;font-size:12.5px;color:var(--ink2);min-height:20px;}
+  #toast:empty{display:none;}
 </style>
 </head>
 <body>
@@ -117,6 +156,20 @@
     <button id="pingButton" onclick="pingMaas()">测试大模型连通性</button>
   </div>
 
+  <details class="card" id="authPanel">
+    <summary>访问设置 <span class="badge" id="authBadge">未填写令牌</span></summary>
+    <form id="authForm" onsubmit="applyToken(event)">
+      <div class="row">
+        <label for="apiToken">访问令牌</label>
+        <input id="apiToken" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="authHint" placeholder="部署启用访问验证时填写">
+        <button class="primary" id="applyTokenButton" type="submit">应用并刷新</button>
+        <button id="clearTokenButton" type="button" onclick="clearToken()" disabled>清除令牌</button>
+      </div>
+      <p id="authHint" class="sub">本地未启用访问验证时可留空。令牌仅在当前页面有效，刷新或关闭页面后需重新填写。</p>
+      <p id="authStatus" class="sub" role="status" aria-live="polite">未填写访问令牌。</p>
+    </form>
+  </details>
+
   <div class="card">
     <h2>添加监控站点</h2>
     <div class="row">
@@ -128,6 +181,12 @@
     </div>
   </div>
 
+  <div class="dashboard">
+  <section aria-label="监控站点列表">
+    <h2 style="font-size:14px;margin:0 0 10px">监控站点 <span class="sub">选择站点查看趋势与修复方案</span></h2>
+    <div class="grid" id="grid" aria-busy="true"><div class="notice" role="status">正在加载监控站点…</div></div>
+  </section>
+  <div class="dashboard-main">
   <section class="card" id="trendCard" aria-labelledby="trendTitle" aria-busy="true">
     <h2 id="trendTitle">响应耗时趋势</h2>
     <div class="trend-toolbar">
@@ -140,7 +199,12 @@
     <div id="trendChart" role="img" aria-label="响应耗时趋势" hidden></div>
     <p id="trendSummary" class="sub"></p>
   </section>
-  <div class="grid" id="grid" aria-busy="true"><div class="notice" role="status">正在加载监控站点…</div></div>
+  <section class="card" id="adviceCard" aria-labelledby="adviceTitle">
+    <h2 id="adviceTitle">AI 建议与修复验证</h2>
+    <div id="adviceBody"><p class="sub">选择一个已巡检的站点，获取诊断和修复方案。</p></div>
+  </section>
+  </div>
+  </div>
   <div id="toast" role="status" aria-live="polite"></div>
 </div>
 
@@ -154,6 +218,10 @@ let overviewRequest = 0;
 let adding = false;
 let activeScan = null;
 let pinging = false;
+let accessToken = '';
+let authVersion = 0;
+let authUpdating = false;
+let statusRequest = 0;
 let trendSiteId = null;
 let trendScanId = null;
 let trendRequest = 0;
@@ -169,16 +237,67 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+function authBusy() {
+  return authUpdating || adding || pinging || activeScan !== null || rows.some((r) => {
+    const s = siteStates.get(r.site_id);
+    return s?.diagnosing || s?.deleting || s?.verifying;
+  });
+}
+
+function authNotice(message, failed = false) {
+  $('authStatus').textContent = message;
+  $('authStatus').className = failed ? 'inline-error' : 'sub';
+  $('authStatus').setAttribute('role', failed ? 'alert' : 'status');
+  if (failed) $('authPanel').open = true;
+}
+
+async function updateToken(token) {
+  if (authBusy()) { authNotice('请等待当前操作结束，再更改访问令牌。', true); return; }
+  if (/[^\x21-\x7e]/.test(token)) { authNotice('请填写不含空格、换行或中文的访问令牌。', true); return; }
+  accessToken = token;
+  ++authVersion;
+  authUpdating = true;
+  $('apiToken').value = '';
+  $('authBadge').textContent = token ? '已填写令牌' : '未填写令牌';
+  authNotice(token ? '令牌已应用，仅在当前页面有效。' : '已清除令牌；未启用访问验证的服务可直接使用。');
+  toast('');
+  // 更换访问设置后重新读取数据，不重放巡检、诊断或删除等操作。
+  rows = [];
+  siteStates.clear();
+  overviewError = '';
+  syncTrendSites(false);
+  render();
+  try { await refresh(); }
+  finally { authUpdating = false; syncControls(); }
+}
+
+function applyToken(event) {
+  event.preventDefault();
+  return updateToken($('apiToken').value.trim());
+}
+
+function clearToken() { return updateToken(''); }
+
 async function api(path, options = {}, timeout = 15000) {
+  const target = new URL(path, window.location.href);
+  if (target.origin !== window.location.origin || !target.pathname.startsWith('/api/')) throw new Error('仅支持当前站点的接口请求。');
+  const version = authVersion;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    const resp = await fetch(path, { ...options, signal: controller.signal });
+    const headers = new Headers(options.headers);
+    if (accessToken) headers.set('Authorization', 'Bearer ' + accessToken);
+    const resp = await fetch(path, { ...options, headers, signal: controller.signal, redirect: 'error' });
+    if (resp.status === 401) {
+      const message = '访问验证未通过，请在“访问设置”中填写或更换令牌，再重试原操作。';
+      if (version === authVersion) authNotice(message, true);
+      throw new Error(message);
+    }
     const text = await resp.text();
     let data;
     try { data = JSON.parse(text); }
     catch { throw new Error('服务返回了无法识别的数据，请稍后重试。'); }
-    if (!resp.ok) throw new Error(typeof data.detail === 'string' ? data.detail : ('请求失败（HTTP ' + resp.status + '）'));
+    if (!resp.ok) throw Object.assign(new Error(typeof data.detail === 'string' ? data.detail : ('请求失败（HTTP ' + resp.status + '）')), { status: resp.status });
     return data;
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('请求超时，请稍后重试。');
@@ -188,8 +307,10 @@ async function api(path, options = {}, timeout = 15000) {
 }
 
 async function loadStatus() {
+  const request = ++statusRequest;
   try {
     const s = await api('/api/status');
+    if (request !== statusRequest) return;
     $('maasBadge').textContent = 'MaaS：' + (s.maas_configured ? (s.maas_model + ' 已配置') : '未配置');
     $('maasBadge').className = 'badge ' + (s.maas_configured ? 'ok' : 'warn');
     const m = $('aiModeBadge');
@@ -199,6 +320,7 @@ async function loadStatus() {
     $('schedBadge').textContent = '调度器：' + (s.scheduler.running ? ('每 ' + s.scheduler.interval_minutes + ' 分钟') : '未启动');
     $('schedBadge').className = 'badge ' + (s.scheduler.running ? 'ok' : 'warn');
   } catch (e) {
+    if (request !== statusRequest) return;
     for (const id of ['maasBadge', 'aiModeBadge', 'schedBadge']) {
       $(id).textContent = '状态读取失败';
       $(id).className = 'badge bad';
@@ -210,24 +332,30 @@ async function loadStatus() {
 function stateFor(row) {
   let state = siteStates.get(row.site_id);
   if (!state) {
-    state = { scanId: row.scan_id, expanded: false, issues: null, links: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '', deleting: false, scanError: '' };
+    state = { scanId: row.scan_id, expanded: false, issues: null, links: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '', deleting: false, scanError: '', patches: null, patchLoading: false, patchError: '', patchRequest: 0, adviceExpanded: false, verifying: false, verification: null, copyStatus: '', manualCopy: null };
     siteStates.set(row.site_id, state);
   } else if (state.scanId !== row.scan_id) {
     // 明细与诊断绑定巡检记录；新巡检不能继续显示旧记录的结论。
-    Object.assign(state, { scanId: row.scan_id, issues: null, links: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '' });
+    Object.assign(state, { scanId: row.scan_id, issues: null, links: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '', patches: null, patchLoading: false, patchError: '', patchRequest: state.patchRequest + 1, copyStatus: '', manualCopy: null });
+    if (!state.verifying) state.verification = null;
   }
   return state;
 }
 
 function syncControls() {
-  const working = rows.some((r) => { const s = stateFor(r); return s.diagnosing || s.deleting; });
+  $('applyTokenButton').disabled = authBusy();
+  $('applyTokenButton').textContent = authUpdating ? '刷新中…' : '应用并刷新';
+  $('clearTokenButton').disabled = authBusy() || !accessToken;
+  $('apiToken').disabled = authBusy();
+
+  const working = rows.some((r) => { const s = stateFor(r); return s.diagnosing || s.deleting || s.verifying; });
   $('addButton').disabled = adding;
   $('addButton').textContent = adding ? '添加中…' : '添加';
   $('siteName').disabled = adding;
   $('siteUrl').disabled = adding;
   $('scanAllButton').disabled = activeScan !== null || working || !rows.length;
   $('scanAllButton').textContent = activeScan === 'all' ? '正在巡检全部…' : '立即巡检全部';
-  $('refreshButton').disabled = overviewLoading;
+  $('refreshButton').disabled = overviewLoading || activeScan !== null || working;
   $('refreshButton').textContent = overviewLoading ? '刷新中…' : '刷新';
   $('grid').setAttribute('aria-busy', String(overviewLoading));
 }
@@ -278,17 +406,15 @@ function render() {
   grid.innerHTML = notice + empty + rows.map((r) => {
     const s = stateFor(r);
     const scanning = activeScan === 'all' || activeScan === r.site_id;
-    const working = scanning || s.diagnosing || s.deleting;
-    const state = r.scan_id == null ? 'unknown' : (r.is_ok ? 'ok' : 'bad');
+    const working = scanning || s.diagnosing || s.deleting || s.verifying;
+    const health = healthFor(r, s);
+    const state = health.state;
     const label = r.scan_id == null ? '尚未巡检' : (r.is_ok ? '可访问' : '访问异常');
     const ssl = r.ssl_days_left == null ? '—' : (r.ssl_days_left + ' 天');
-    let diagnosis = '';
-    if (s.diagnosing) diagnosis = '<span class="sub" role="status">AI 正在分析…</span>';
-    else if (s.diagnosisError) diagnosis = `<div class="inline-error" role="alert"><p>诊断失败：${esc(s.diagnosisError)}</p><button onclick="diagnose(${r.site_id}, ${r.scan_id})" ${working ? 'disabled' : ''}>重试诊断</button></div>`;
-    else if (s.diagnosis) diagnosis = renderDiag(s.diagnosis);
-    return `<div class="site ${state}" id="site-${r.site_id}">
-      <div class="nm">${esc(r.name)} <span class="badge ${state === 'ok' ? 'ok' : state === 'bad' ? 'bad' : ''}">${label}</span></div>
+    return `<div class="site ${state} ${trendSiteId === r.site_id ? 'selected' : ''}" id="site-${r.site_id}">
+      <div class="nm"><button class="site-picker" id="select-${r.site_id}" onclick="selectSite(${r.site_id})" aria-pressed="${trendSiteId === r.site_id}">${esc(r.name)}</button> <span class="health-label"><span class="health-dot ${state}" aria-hidden="true"></span>${esc(health.label)}</span></div>
       <div class="u">${esc(r.url)}</div>
+      <p class="sub">${label} · ${r.scan_id == null ? '等待首次巡检' : '巡检 #' + r.scan_id}${s.error ? ` · 明细未读取，<button onclick="loadIssues(${r.site_id})">重试状态</button>` : ''}</p>
       <div class="metrics">
         <span>状态码 <b>${r.status_code ?? '—'}</b></span>
         <span>响应 <b>${r.response_ms != null ? r.response_ms + ' ms' : '—'}</b></span>
@@ -308,9 +434,9 @@ function render() {
       ${scanning ? '<p class="site-status" role="status">正在巡检，链接需二次复核，请稍候。完成前不能重复发起巡检。</p>' : ''}
       ${s.scanError ? `<p class="site-status inline-error" role="alert">巡检失败：${esc(s.scanError)}。可点击“巡检”重试。</p>` : ''}
       <div class="issues" id="issues-${r.site_id}" ${s.expanded ? '' : 'hidden'} aria-busy="${s.loading}">${renderIssues(r, s)}</div>
-      <div class="diag" id="diag-${r.site_id}" aria-busy="${s.diagnosing}">${diagnosis}</div>
     </div>`;
   }).join('');
+  renderAdvice();
   syncControls();
   if (focusId && $(focusId) && !$(focusId).disabled) $(focusId).focus({ preventScroll: true });
 }
@@ -336,9 +462,15 @@ async function load() {
       render();
       for (const r of rows) {
         const s = stateFor(r);
-        if (s.expanded && r.scan_id != null && s.issues === null && !s.loading && !s.error) loadIssues(r.site_id);
+        if (r.scan_id != null && s.issues === null && !s.loading && !s.error) loadIssues(r.site_id);
       }
       syncTrendSites(!overviewError);
+      render();
+      const selected = rows.find((r) => r.site_id === trendSiteId);
+      if (selected && selected.scan_id != null) {
+        const s = stateFor(selected);
+        if (s.patches === null && !s.patchLoading && !s.patchError && !s.diagnosing) loadPatches(selected.site_id, true);
+      }
     }
   }
 }
@@ -398,7 +530,7 @@ async function removeSite(id) {
   const row = rows.find((r) => r.site_id === id);
   if (!row || activeScan !== null) return;
   const s = stateFor(row);
-  if (s.deleting || s.diagnosing) return;
+  if (s.deleting || s.diagnosing || s.verifying) return;
   s.deleting = true;
   render();
   try { await api('/api/sites/' + id, { method: 'DELETE' }); toast('已删除'); await load(); }
@@ -410,7 +542,7 @@ async function scanOne(id) {
   const row = rows.find((r) => r.site_id === id);
   if (!row || activeScan !== null) return;
   const s = stateFor(row);
-  if (s.diagnosing || s.deleting) return;
+  if (s.diagnosing || s.deleting || s.verifying) return;
   activeScan = id;
   s.scanError = '';
   render();
@@ -424,7 +556,7 @@ async function scanOne(id) {
 }
 
 async function scanAll() {
-  if (activeScan !== null || !rows.length || rows.some((r) => { const s = stateFor(r); return s.diagnosing || s.deleting; })) return;
+  if (activeScan !== null || !rows.length || rows.some((r) => { const s = stateFor(r); return s.diagnosing || s.deleting || s.verifying; })) return;
   activeScan = 'all';
   rows.forEach((r) => { stateFor(r).scanError = ''; });
   render();
@@ -445,11 +577,12 @@ async function scanAll() {
   } finally { activeScan = null; render(); }
 }
 
-async function diagnose(siteId, scanId) {
+async function diagnose(siteId, scanId, inVerification = false) {
   const row = rows.find((r) => r.site_id === siteId);
   if (!row || scanId == null) { toast('请先巡检该站点'); return; }
   const s = stateFor(row);
-  if (s.scanId !== scanId || s.diagnosing || s.deleting || activeScan === 'all' || activeScan === siteId) return;
+  if (s.scanId !== scanId || s.diagnosing || s.deleting || (s.verifying && !inVerification) || activeScan === 'all' || activeScan === siteId) return;
+  if (!inVerification) selectSite(siteId);
   s.diagnosing = true;
   s.diagnosisError = '';
   render();
@@ -457,7 +590,10 @@ async function diagnose(siteId, scanId) {
     const result = await api('/api/scans/' + scanId + '/diagnose', { method: 'POST' }, 90000);
     const diagnosis = unwrapDiagnosis(result);
     if (!diagnosis) throw new Error('诊断结果格式不正确，请稍后重试。');
-    if (siteStates.get(siteId) === s && s.scanId === scanId) s.diagnosis = diagnosis;
+    if (siteStates.get(siteId) === s && s.scanId === scanId) {
+      s.diagnosis = diagnosis;
+      await loadPatches(siteId);
+    }
   } catch (e) {
     if (siteStates.get(siteId) === s && s.scanId === scanId) s.diagnosisError = e.message;
   } finally {
@@ -468,20 +604,235 @@ async function diagnose(siteId, scanId) {
 function unwrapDiagnosis(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const result = raw.result && typeof raw.result === 'object' ? raw.result : raw;
-  return !Array.isArray(result) && ['summary', 'severity', 'root_causes', 'actions', 'patch'].some((key) => key in result) ? result : null;
+  return !Array.isArray(result) && ['summary', 'severity', 'root_causes', 'actions'].some((key) => key in result) ? result : null;
 }
 
-function renderDiag(d) {
+const LEVEL_RANK = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+function healthFor(row, s) {
+  if (row.scan_id == null) return { state: 'unknown', label: '尚未巡检' };
+  if (!row.is_ok || s.issues?.some((i) => LEVEL_RANK[i.level] <= 2)) return { state: 'bad', label: '有异常' };
+  if (s.issues === null || s.error || s.issues.some((i) => !(i.level in LEVEL_RANK))) return { state: 'unknown', label: '状态待确认' };
+  return { state: 'ok', label: s.issues.length ? '正常 · 有低优先级提醒' : '正常' };
+}
+
+function selectSite(id) {
+  const row = rows.find((r) => r.site_id === id);
+  if (!row) return;
+  const changed = trendSiteId !== id;
+  trendSiteId = id;
+  $('trendSite').value = String(id);
+  render();
+  if (changed) loadTrend();
+  const s = stateFor(row);
+  if (row.scan_id != null && s.patches === null && !s.patchLoading && !s.patchError && !s.diagnosing) loadPatches(id, true);
+}
+
+function rememberAdvice(id, open) {
+  const s = siteStates.get(id);
+  if (s) s.adviceExpanded = open;
+}
+
+function renderAdvice() {
+  const row = rows.find((r) => r.site_id === trendSiteId);
+  if (!row) {
+    $('adviceTitle').textContent = 'AI 建议与修复验证';
+    $('adviceCard').setAttribute('aria-busy', 'false');
+    $('adviceBody').innerHTML = '<p class="sub">添加并选择站点后，在这里查看 AI 建议与修复方案。</p>';
+    return;
+  }
+  const s = stateFor(row);
+  const busy = activeScan !== null || s.diagnosing || s.deleting || s.verifying;
+  $('adviceTitle').textContent = 'AI 建议与修复验证 · ' + row.name;
+  $('adviceCard').setAttribute('aria-busy', String(s.diagnosing || s.verifying || s.patchLoading));
+  const diagnosis = s.diagnosis ? renderDiag(s.diagnosis, row.site_id, s.adviceExpanded) : '<p class="sub">先巡检，再点击 AI 诊断获取修复建议。</p>';
+  const diagnosticStatus = s.diagnosing ? '<p role="status">AI 正在分析，请稍候…</p>' : '';
+  const error = s.diagnosisError ? `<div class="inline-error" role="alert"><p>诊断失败：${esc(s.diagnosisError)}</p><button onclick="diagnose(${row.site_id}, ${row.scan_id})" ${busy ? 'disabled' : ''}>重试诊断</button></div>` : '';
+  $('adviceBody').innerHTML = `<p class="sub">${row.scan_id == null ? '尚未巡检' : '当前巡检 #' + row.scan_id}</p>${diagnosticStatus}${error}${diagnosis}
+    <div class="row" style="margin-top:10px"><button class="primary" onclick="diagnose(${row.site_id}, ${row.scan_id ?? 'null'})" ${row.scan_id == null || busy ? 'disabled' : ''}>${s.diagnosing ? '诊断中…' : '获取 AI 建议'}</button></div>
+    <p class="sub">请先在自己管理的网站上核对并手动应用方案，再重新巡检；本页面不会修改远程网站。</p>
+    <button id="verify-${row.site_id}" class="primary" onclick="verifyFix(${row.site_id})" ${busy || row.scan_id == null || !s.diagnosis || s.issues === null ? 'disabled' : ''}>${s.verifying ? '正在复扫验证…' : '应用修复后重新巡检'}</button>
+    ${renderVerification(row, s)}${renderPatches(row, s)}`;
+}
+
+function renderPatches(row, s) {
+  if (s.patchLoading) return '<p role="status">正在读取修复片段…</p>';
+  if (s.patchError) return `<div class="inline-error" role="alert"><p>读取修复片段失败：${esc(s.patchError)}</p><button onclick="loadPatches(${row.site_id})">重试读取补丁</button></div>`;
+  if (s.patches === null) return '';
+  if (!s.patches.length) return '<p class="sub">本次无需代码修改。若仍有问题，请按处理建议排查。</p>';
+  return `<h3 style="font-size:13px;margin-bottom:0">修复片段 · ${s.patches.length} 段</h3>${s.patches.map((p, index) => `<section class="patch-card"><div class="patch-heading"><h4>${esc(p.title || '修复片段')}</h4><button onclick="copyPatch(${row.site_id}, ${row.scan_id}, ${index})" aria-label="复制修复片段 ${index + 1}">一键复制</button></div><span class="sub">${esc(p.category || '未分类')} · ${esc(p.language || '纯文本')}</span><pre><code>${esc(p.code)}</code></pre></section>`).join('')}
+    <p role="status" aria-live="polite">${esc(s.copyStatus)}</p>${s.manualCopy !== null ? `<label for="manualCopy-${row.site_id}">浏览器未允许自动复制，请选中下方原文手动复制：</label><textarea class="manual-copy" id="manualCopy-${row.site_id}" readonly>${esc(s.manualCopy)}</textarea>` : ''}`;
+}
+
+async function loadPatches(id, optional = false) {
+  const row = rows.find((r) => r.site_id === id);
+  if (!row || row.scan_id == null) return;
+  const s = stateFor(row);
+  const scanId = row.scan_id;
+  const request = ++s.patchRequest;
+  s.patchLoading = true;
+  s.patchError = '';
+  render();
+  try {
+    // 补丁只消费后端统一契约，不读取诊断原始 result 的 patch / patches。
+    const result = await api('/api/scans/' + scanId + '/patch');
+    if (result.scan_id !== scanId || result.site_id !== id || !Array.isArray(result.patches)) throw new Error('补丁与当前巡检不匹配，或返回格式不正确。');
+    if (result.patches.some((p) => !p || typeof p.code !== 'string' || !p.code.trim())) throw new Error('补丁正文为空或格式不正确，请重新诊断后再试。');
+    if (siteStates.get(id) !== s || s.scanId !== scanId || request !== s.patchRequest) return;
+    s.patches = result.patches;
+    s.copyStatus = '';
+    s.manualCopy = null;
+    if (!s.diagnosis) s.diagnosis = { summary: result.summary, severity: result.severity, _meta: { model: result.model } };
+  } catch (e) {
+    if (siteStates.get(id) === s && s.scanId === scanId && request === s.patchRequest) {
+      // 未诊断的历史记录允许正常浏览；真正的读取失败提供单独重试。
+      if (!(optional && e.status === 400)) s.patchError = e.message;
+    }
+  } finally {
+    if (siteStates.get(id) === s && s.scanId === scanId && request === s.patchRequest) { s.patchLoading = false; render(); }
+  }
+}
+
+async function copyPatch(id, scanId, index) {
+  const s = siteStates.get(id);
+  const patch = s?.scanId === scanId ? s.patches?.[index] : null;
+  if (!patch) return;
+  const text = patch.code;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(text);
+    if (siteStates.get(id) !== s || s.scanId !== scanId) return;
+    s.copyStatus = '已复制第 ' + (index + 1) + ' 段修复片段。';
+    s.manualCopy = null;
+  } catch {
+    if (siteStates.get(id) !== s || s.scanId !== scanId) return;
+    s.copyStatus = '自动复制未成功，可手动复制原文。';
+    s.manualCopy = text;
+  }
+  render();
+  const field = $('manualCopy-' + id);
+  if (s.manualCopy !== null && field) { field.focus({ preventScroll: true }); field.select(); }
+}
+
+function scanSnapshot(scan) {
+  const issues = Array.isArray(scan.report?.issues) ? scan.report.issues : scan.issues;
+  if (!Array.isArray(issues)) throw new Error('巡检记录缺少问题清单，暂不能验证修复。');
+  return { id: scan.id, siteId: scan.site_id, time: scan.created_at || '', report: scan.report || {}, issues };
+}
+
+function issueKey(issue) {
+  const category = issue.category || 'unknown';
+  // SEO 同类里有三个独立问题，不能把 title 修复误判成 description 修复。
+  if (category === 'seo') {
+    const m = String(issue.message || '').match(/description|title|H1/i);
+    return category + ':' + (m ? m[0].toLowerCase() : issue.message);
+  }
+  return category;
+}
+
+function compareScans(before, after) {
+  const report = after.report;
+  const measurable = !report.error && report.ok === true && Number(report.status_code) >= 200 && Number(report.status_code) < 400;
+  const result = before.issues.map((old) => {
+    const matches = after.issues.filter((i) => issueKey(i) === issueKey(old));
+    const next = matches.slice().sort((a, b) => (LEVEL_RANK[a.level] ?? -1) - (LEVEL_RANK[b.level] ?? -1))[0];
+    if (next) {
+      const a = LEVEL_RANK[old.level], b = LEVEL_RANK[next.level];
+      const status = a === undefined || b === undefined ? 'unconfirmed' : b > a ? 'improved' : b < a ? 'worsened' : 'remaining';
+      return { old, next, status };
+    }
+    if (!measurable || !(old.level in LEVEL_RANK)) return { old, status: 'unconfirmed' };
+    if (old.category === 'ssl' && !Number.isFinite(report.ssl_days_left)) return { old, status: 'unconfirmed' };
+    if (old.category === 'performance' && !Number.isFinite(report.response_ms)) return { old, status: 'unconfirmed' };
+    if (old.category === 'seo' && !['title', 'description', 'h1_count'].every((key) => key in report)) return { old, status: 'unconfirmed' };
+    if (old.category === 'accessibility' && !Number.isFinite(report.images_without_alt)) return { old, status: 'unconfirmed' };
+    const linkFields = { broken_link: 'broken_links', link_server_error: 'server_error_links', link_unverified: 'unverified_links' };
+    if (old.category in linkFields) {
+      if (!['broken_links', 'server_error_links', 'unverified_links'].every((key) => Array.isArray(report[key]))) return { old, status: 'unconfirmed' };
+      const urls = (before.report[linkFields[old.category]] || []).map((link) => link.url);
+      // 失效链接变成限流、超时或 5xx 时，不能宣称已经修复。
+      const uncertain = [...report.unverified_links, ...report.server_error_links].some((link) => urls.includes(link.url));
+      if (uncertain) return { old, status: 'unconfirmed' };
+    }
+    return { old, status: 'resolved' };
+  });
+  const oldKeys = new Set(before.issues.map(issueKey));
+  return { items: result, added: after.issues.filter((i) => !oldKeys.has(issueKey(i))), measurable };
+}
+
+function renderVerification(row, s) {
+  const v = s.verification;
+  if (!v) return '';
+  if (v.error) return `<section class="verification" role="alert"><b>验证尚未完成</b><p>${esc(v.error)}</p>${v.afterId ? `<button onclick="retryVerification(${row.site_id})" ${s.verifying ? 'disabled' : ''}>重新读取对比结果（不重复巡检）</button>` : '<p class="sub">若请求超时，请先刷新历史记录确认是否已完成巡检，再决定是否复扫。</p>'}</section>`;
+  if (!v.result) return '<p class="verification" role="status">正在保存基线、重新巡检并读取对比结果…</p>';
+  const labels = { resolved: '✅ 该问题已修复（本次未再发现）', improved: '↘ 问题有所改善，等级下降', remaining: '⚠️ 问题仍存在', worsened: '⚠️ 问题加重', unconfirmed: '待确认：本次证据不足，不能判定修复' };
+  return `<section class="verification"><h3 style="font-size:13px;margin:0">复扫对比 · #${v.before.id} → #${v.afterId}</h3><p class="sub">${esc(v.before.time)} → ${esc(v.after.time)} · 响应 ${esc(v.before.report.response_ms ?? '—')} → ${esc(v.after.report.response_ms ?? '—')} ms</p>
+    ${!v.result.measurable ? '<p class="inline-error">本次网站访问异常，未再次报出的问题不能据此判为已修复。</p>' : ''}
+    ${v.result.items.length ? `<ul class="comparison-list">${v.result.items.map((i) => `<li class="${i.status}"><b>${labels[i.status]}</b><br>${esc(i.old.message)}<br><span class="sub">${esc(i.old.level)} → ${esc(i.next?.level || (i.status === 'resolved' ? '未再发现' : '无法确认'))}${i.next ? ' · ' + esc(i.next.message) : ''}</span></li>`).join('')}</ul>` : '<p>基线没有问题，无需判定修复。</p>'}
+    ${v.result.added.length ? `<h4>本次新增的问题</h4><ul>${v.result.added.map((i) => `<li>${esc(i.level)} · ${esc(i.message)}</li>`).join('')}</ul>` : ''}
+    <p class="sub">对比针对上述两次巡检；瞬时变化仍需持续观察。本次对比仅在当前页面保留，下次复扫以当前巡检为基线。</p></section>`;
+}
+
+async function finishVerification(id, s, v) {
+  const [raw, history] = await Promise.all([api('/api/scans/' + v.afterId), api('/api/scans?site_id=' + id + '&limit=50')]);
+  const after = scanSnapshot(raw);
+  if (after.siteId !== id || after.id !== v.afterId || !Array.isArray(history) || !history.some((scan) => scan.id === v.afterId && scan.site_id === id)) throw new Error('复扫记录尚未与该站点的历史对应，请重试读取。');
+  if (siteStates.get(id) !== s || s.verification !== v) return;
+  v.after = after;
+  v.result = compareScans(v.before, after);
+  v.error = '';
+  toast(`复扫完成：原有 ${v.before.issues.length} 项问题，本次发现 ${after.issues.length} 项。请查看前后对比。`);
+  await load();
+  activeScan = null;
+  const row = rows.find((r) => r.site_id === id);
+  if (row?.scan_id === v.afterId) await diagnose(id, v.afterId, true);
+}
+
+async function verifyFix(id) {
+  const row = rows.find((r) => r.site_id === id);
+  if (!row || row.scan_id == null || activeScan !== null) return;
+  const s = stateFor(row);
+  if (!s.diagnosis || s.issues === null || s.diagnosing || s.deleting || s.verifying) return;
+  const before = { id: row.scan_id, siteId: id, time: row.created_at || '', report: s.links || {}, issues: s.issues.map((i) => ({ ...i })) };
+  const v = { before, afterId: null, after: null, result: null, error: '' };
+  s.verification = v;
+  s.verifying = true;
+  s.scanError = '';
+  activeScan = id;
+  toast('正在重新巡检并验证修复，请稍候。');
+  render();
+  try {
+    const result = await api('/api/sites/' + id + '/scan', { method: 'POST' }, 180000);
+    if (!Number.isInteger(result.scan_id) || result.scan_id === before.id) throw new Error('未收到新的巡检编号，请刷新历史记录核对。');
+    v.afterId = result.scan_id;
+    await finishVerification(id, s, v);
+  } catch (e) { if (siteStates.get(id) === s) v.error = e.message; }
+  finally { s.verifying = false; activeScan = null; render(); }
+}
+
+async function retryVerification(id) {
+  const s = siteStates.get(id);
+  const v = s?.verification;
+  if (!v?.afterId || s.verifying || s.diagnosing || s.deleting || activeScan !== null) return;
+  s.verifying = true;
+  v.error = '';
+  activeScan = id;
+  render();
+  try { await finishVerification(id, s, v); }
+  catch (e) { v.error = e.message; }
+  finally { s.verifying = false; activeScan = null; render(); }
+}
+
+function renderDiag(d, siteId = null, expanded = false) {
   const causes = (Array.isArray(d.root_causes) ? d.root_causes : []).map((c) => `<li><b>${esc(c?.issue)}</b><br><i>${esc(c?.reason)}</i></li>`).join('');
   const actions = (Array.isArray(d.actions) ? d.actions : []).map((a) => `<li>[步骤 ${esc(a?.priority)}] <b>${esc(a?.action)}</b><br><i>${esc(a?.how)}</i></li>`).join('');
-  const patch = typeof d.patch === 'string' && d.patch.trim() ? `<h4>修复片段</h4><pre><code>${esc(d.patch)}</code></pre>` : '';
   const meta = d._meta || {};
   const level = ['P0', 'P1', 'P2', 'P3'].includes(d.severity) ? d.severity : '';
   const model = typeof meta.model === 'string' ? meta.model.trim() : '';
   const mock = model === 'mock-diagnosis' || meta.provider === 'mock';
   const source = mock ? `<div class="mocknote"><b>模拟模式</b> —— 结论由内置规则生成，未调用真实大模型。${esc(meta.note || '')}</div>`
     : `<div class="modelnote"><span class="badge ${model ? 'ok' : ''}">${model ? '由华为云 MaaS 大模型诊断' : '诊断来源未标明'}</span>${model ? `<span class="sub">${esc(model)}</span>` : ''}${Number.isFinite(meta.total_tokens) ? `<span class="sub">${meta.total_tokens} tokens</span>` : ''}</div>`;
-  return `${source}<div><span class="sev ${level}">${esc(d.severity || '未分级')}</span> ${esc(d.summary || '未提供诊断摘要')}</div><h4>根因分析</h4>${causes ? `<ul>${causes}</ul>` : '<p class="sub">暂无根因分析。</p>'}<h4>处置建议</h4>${actions ? `<ul>${actions}</ul>` : '<p class="sub">暂无处置建议。</p>'}${patch}`;
+  return `${source}<div class="advice-summary"><span class="sev ${level}">${esc(d.severity || '未分级')}</span> ${esc(d.summary || '未提供诊断摘要')}</div><details class="advice-details" ${expanded ? 'open' : ''} ontoggle="rememberAdvice(${siteId}, this.open)"><summary>根因与处理建议</summary><h4>根因分析</h4>${causes ? `<ul>${causes}</ul>` : '<p class="sub">暂无根因明细，可点击 AI 诊断获取。</p>'}<h4>处置建议</h4>${actions ? `<ul>${actions}</ul>` : '<p class="sub">暂无处置明细。</p>'}</details>`;
 }
 
 async function pingMaas() {
@@ -521,8 +872,7 @@ function syncTrendSites(allowLoad) {
 function selectTrend() {
   const id = Number($('trendSite').value);
   if (!rows.some((r) => r.site_id === id)) return;
-  trendSiteId = id;
-  loadTrend();
+  selectSite(id);
 }
 
 function normalizeHistory(history) {
@@ -606,15 +956,16 @@ function renderTrend() {
   chartElement.setAttribute('aria-label', `${selected.name}的响应耗时趋势，共${trendHistory.length}次巡检，${valid.length}次取得有效耗时。`);
   try {
     if (!trendChart) trendChart = window.echarts.init(chartElement, null, { renderer: 'svg' });
+    const compact = chartElement.clientHeight > 0 && chartElement.clientHeight <= 130;
     trendChart.setOption({
       animation: false,
       aria: { enabled: true, description: chartElement.getAttribute('aria-label') },
-      grid: { left: 16, right: 24, top: 36, bottom: 60, containLabel: true },
+      grid: { left: 16, right: 24, top: compact ? 24 : 36, bottom: compact ? 8 : 60, containLabel: true },
       tooltip: { trigger: 'axis', renderMode: 'richText', formatter: (items) => {
         const scan = trendHistory[items[0]?.dataIndex];
         return scan ? `${scan.time}\n响应耗时：${scan.ms === null ? '未取得响应' : scan.ms + ' ms'}` : '';
       } },
-      xAxis: { type: 'category', boundaryGap: false, name: '巡检时间', nameLocation: 'middle', nameGap: 42, data: trendHistory.map((scan) => scan.time), axisLabel: { hideOverlap: true, formatter: (value) => /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(5, 16).replace(' ', '\n') : value } },
+      xAxis: { type: 'category', boundaryGap: false, name: compact ? '' : '巡检时间', nameLocation: 'middle', nameGap: 42, data: trendHistory.map((scan) => scan.time), axisLabel: { hideOverlap: true, formatter: (value) => /^\d{4}-\d{2}-\d{2}/.test(value) ? (compact ? value.slice(11, 16) : value.slice(5, 16).replace(' ', '\n')) : value } },
       yAxis: { type: 'value', min: 0, name: '耗时（ms）', nameGap: 16 },
       series: [{ name: '响应耗时', type: 'line', data: trendHistory.map((scan) => scan.ms), connectNulls: false, symbol: 'circle', symbolSize: 7, lineStyle: { color: '#1f5fa9' }, itemStyle: { color: '#1f5fa9' } }],
     }, { notMerge: true });
