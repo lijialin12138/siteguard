@@ -391,6 +391,38 @@ def _fill_patch(code: str, report: dict, category: str) -> str:
     return code
 
 
+# scanner.build_issues 认可的 11 个 category（用于校验真实模型输出是否越界）
+_VALID_CATEGORIES = {
+    "availability", "server_error", "client_error", "redirect", "performance",
+    "ssl", "broken_link", "link_server_error", "link_unverified", "seo",
+    "accessibility",
+}
+
+
+def _validate_patches(patches: object) -> list[str]:
+    """校验真实模型产出的 patches：code 非空、category 不越界、link_unverified 不含删除。
+
+    返回问题清单（空列表表示通过）。只做检查与告警，不擅自改写模型内容。
+    """
+    problems: list[str] = []
+    if not isinstance(patches, list):
+        return ["patches 字段不是数组，已按空处理"]
+    for p in patches:
+        if not isinstance(p, dict):
+            problems.append("存在非对象的补丁项")
+            continue
+        if not (p.get("code") or "").strip():
+            problems.append(f"category={p.get('category')} 的补丁 code 为空")
+        cat = p.get("category")
+        if cat not in _VALID_CATEGORIES:
+            problems.append(f"category 越界: {cat}")
+        if cat == "link_unverified":
+            code_l = (p.get("code") or "").lower()
+            if re.search(r"\brm\b|\brm\s+-rf|\bdel\b|\brmdir\b|\bunlink\b|remove-item", code_l):
+                problems.append("link_unverified 含删除/移除命令（违反铁律：只给复核命令）")
+    return problems
+
+
 def _mock_diagnose(report: dict) -> dict:
     """基于规则问题清单给出一份模拟诊断结论（含结构化 patches 补丁）。"""
     issues = sorted(
@@ -569,10 +601,15 @@ async def diagnose(report: dict) -> dict:
     )
     content = resp.choices[0].message.content or ""
     result = _extract_json(content)
+    if not isinstance(result, dict):
+        result = {"summary": "模型返回内容无法解析为 JSON", "raw": content}
     # 真实模型可能直接给 patches 数组；若只给了旧 patch 字段，保持原样交给后端 extract_patches 统一
+    result["patches"] = result.get("patches") or []
+    warnings = _validate_patches(result["patches"])
     result["_meta"] = {
         "model": MAAS_MODEL,
         "total_tokens": getattr(resp.usage, "total_tokens", None),
+        "patch_warnings": warnings,
     }
     return result
 
@@ -600,7 +637,17 @@ async def write_daily_report(report: dict, diagnosis: dict) -> str:
         ],
         temperature=0.3,
     )
-    return resp.choices[0].message.content or ""
+    text = resp.choices[0].message.content or ""
+    # 真实简报强制拼接修复片段，不再依赖模型自觉是否包含 patches
+    patches = diagnosis.get("patches") or []
+    code_blocks = [
+        f"### [{p.get('category', '')}] {p.get('title', '')}\n\n```{p.get('language') or ''}\n{p.get('code', '')}\n```"
+        for p in patches
+        if (p.get("code") or "").strip()
+    ]
+    if code_blocks:
+        text = text.rstrip() + "\n\n## 修复片段（可直接复制执行）\n\n" + "\n\n".join(code_blocks) + "\n"
+    return text
 
 
 async def ping() -> str:
