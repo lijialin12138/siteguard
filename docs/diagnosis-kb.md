@@ -2,36 +2,38 @@
 ## 一、系统提示词 SYSTEM_PROMPT 说明
 ### 现状
 系统提示词规定AI需要接收网站扫描数据，识别网站故障类型，输出结构化诊断结果。
-要求AI区分三类站点状态：
-1. 全部正常（无任何问题）
-2. 存在P1失效链接
-3. SSL证书3天内过期
-AI输出内容需要包含：故障类别、风险根因、处置动作、详细操作步骤、代码/配置修复片段。
+D5 起输出新增结构化补丁列表 `patches`：每个真实问题类别各一段可直接落地的修复片段
+（字段 `{category, title, language, code}`），旧字段 `patch`（单段字符串）保留做兜底兼容。
+AI 输出需包含：故障类别、风险根因、处置动作、详细操作步骤、可落地的代码/配置修复片段（patches）。
 
 > 补充：提示词中特别区分三类链接异常，含义不可混用：
 > 1.broken_link_count：404/410真正死链；
 > 2.link_server_error_count：5xx服务端错误，多为瞬时故障；
 > 3.link_unverified_count：无法验证，不等于链接失效，需要人工复核。
 
-## 二、故障知识库对照表（_MOCK_KNOWLEDGE）
-| 问题类别 | 根因 | 处置动作 | 操作步骤 | 修复片段 |
-| ---- | ---- | ---- | ---- | ---- |
-| 全部正常 | 网站链接可访问、SSL证书有效期充足，无安全风险 | 无需修复，持续监控 | 1. 定期执行站点扫描<br>2. 监控证书到期时间<br>3. 巡检链接可用性 | 无需修改代码/配置 |
-| P1失效链接 | 页面内存在高优先级失效链接，链接地址失效、404/410无法访问，影响用户访问体验与SEO | 清理或替换失效链接 | 1. 定位网页内失效超链接<br>2. 删除无效链接，或者替换为有效地址<br>3. 修改完成后重新扫描验证 | `<a href="正确地址">文本</a>` |
-| SSL证书3天内过期 | 网站SSL证书即将到期，浏览器会弹出不安全告警，用户无法正常HTTPS访问 | 续签SSL证书 | 1. 登录证书服务商后台<br>2. 申请证书续签<br>3. 将新证书上传部署到Web服务器<br>4. 重启Web服务，验证HTTPS访问 | Nginx配置片段<br>ssl_certificate 新证书.crt;<br>ssl_certificate_key 私钥.key; |
+## 二、故障知识库对照表（_MOCK_KNOWLEDGE，D5 升级为 patches 数组）
 
-> 附录：_MOCK_KNOWLEDGE其余故障类别简表（来自ai.py内置知识库，供答辩查阅）
-| 问题类别 | 根因简述 | 处置动作简述 |
-| ---- | ---- | ---- |
-| availability | 站点无响应，服务/DNS/防火墙问题 | 恢复站点可用性 |
-| server_error | 返回5xx，应用、数据库资源异常 | 排查后端日志恢复服务 |
-| client_error | 返回4xx，路径变更或权限拦截 | 配置重定向/调整权限 |
-| redirect | 多级跳转，增加网络开销 | 合并跳转链路 |
-| performance | 响应耗时过高，慢查询/静态资源未优化 | 优化缓存与静态资源 |
-| link_server_error | 外部链接返回5xx，多为瞬时故障 | 多次复测再处理 |
-| link_unverified | 链接校验失败，反爬限流导致，不等于失效 | 人工浏览器复核 |
-| seo | 缺失title、H1等SEO标签 | 补齐页面SEO元标签 |
-| accessibility | 图片缺少alt无障碍描述 | 补充图片alt属性 |
+> D5 起 `patch` 升级为结构化 `patches` 数组（见 `docs/patch契约提案.md`）：
+> 每个真实问题类别各给一段「可直接复制落地」的补丁，字段为 `{category, title, language, code}`。
+> 下表 `_MOCK_KNOWLEDGE` 已按 scanner 的 11 个 category 覆盖，code 用 `{url}`/`{host}` 占位，运行时按报告真实样本地址替换。
+
+| category | 含义 | 补丁形态(language) | 补丁 title | 补丁内容要点 |
+| ---- | ---- | ---- | ---- | ---- |
+| availability | 站点无响应 | bash | 排查并恢复站点可用性 | ping/curl 排查网络层→HTTP 层→`systemctl status nginx`→`journalctl` 看错误 |
+| server_error | 5xx | bash | 捞取服务端错误日志，定位 5xx 根因 | `journalctl -u nginx` / `tail /var/log/nginx/error.log` / 应用日志 |
+| client_error | 4xx（非死链） | nginx | 补全 301 重定向 / 修正访问权限 | 旧路径 `return 301` 到新地址 |
+| redirect | 多余跳转 | nginx | 合并多余跳转，减少 301 链 | http+www 一次性 `return 301 https` |
+| performance | 响应慢 | nginx | 开启 gzip 压缩与静态资源缓存 | `gzip on` + 静态资源 `expires 30d`/`Cache-Control immutable` |
+| ssl | 证书临期/过期 | bash | 证书续期并配置自动续期 | `certbot --nginx` + `certbot renew --dry-run` + crontab 自动续期 |
+| broken_link | 404/410 死链 | html | 修正失效超链接 | 把 `<a href>` 改到正确地址；或 Nginx 301（注入真实失效 URL） |
+| link_server_error | 链接 5xx（可能瞬时） | bash | 对 5xx 链接复测，确认是否瞬时故障 | 浏览器 UA 复测 3 次；仅确为死链才改/加 301（**先复测勿急删**） |
+| link_unverified | 无法验证（403/429/超时） | bash | 对无法验证的链接复核（切勿急于删除） | 浏览器 UA 复核；**只复核、绝不给删除命令**（403/429≠死链） |
+| seo | 缺 title/description/H1 | html | 补全页面 <head> 基础 SEO 标签 | `<title>` + `<meta name=description>` + 唯一 H1 |
+| accessibility | 图片缺 alt | html | 为图片补全 alt 描述 | `<img alt="描述">`，装饰图用 `alt=""` |
+
+> 硬约束（与 `ai.py` SYSTEM_PROMPT 一致）：禁止编造不存在的文件路径/命令/域名；
+> 无法确定确定性补丁时该类别不进 `patches`，只在 action 的 how 里说明还需补充信息。
+
 
 ## 三、提示词改进提案
 ### 建议1

@@ -1,0 +1,33 @@
+SiteGuard D5 · 码道 CodeArts 补丁生成提示词（逐条复制粘贴，共 6 条）
+用法：复制下面某一条 → 粘到码道右下角输入框（显示"/调用快捷指令，添加上文"那一行）→ 回车 → 等生成 → 截图
+============================================================
+
+【第 1 条】ssl（证书临期）→ 截图存为 ssl.png
+
+你是华为云运维助手。场景：企业站点HTTPS证书将于15天内到期。请给出Linux(Nginx)下 certbot 证书续期与自动续期方案，含安装、申请、dry-run校验、crontab 定时续期与 nginx -s reload。输出为JSON数组，元素含 category,title,language,code，category=ssl, language=bash。
+
+
+【第 2 条】broken_link（404 死链）→ 截图存为 broken_link.png
+
+你是华为云运维助手。场景：页面存在已确认404的链接 https://demo.test/old.html。请给出修复：1)HTML里把a标签href改到正确地址；2)Nginx 301跳转示例。输出JSON数组，元素含 category,title,language,code，category=broken_link, language=html。
+
+
+【第 3 条】performance（响应慢）→ 截图存为 performance.png
+
+你是华为云运维助手。场景：站点首页响应1820ms偏慢。请给出Nginx性能优化片段：开启gzip(限定类型)、静态资源长缓存(expires与Cache-Control immutable)。输出JSON数组，元素含 category,title,language,code，category=performance, language=nginx。
+
+
+【第 4 条】seo（缺 SEO 标签）→ 截图存为 seo.png
+
+你是华为云运维助手。场景：页面缺少title标签、meta name=description、唯一h1。请给出完整head补全片段。输出JSON数组，元素含 category,title,language,code，category=seo, language=html。
+
+
+【第 5 条】link_unverified（403 无法验证）→ 截图存为 link_unverified.png
+⚠️ 重点验收：只允许出现复核命令，一旦出现删除链接的操作就算不合格，必须让它重写。
+
+你是华为云运维助手。场景：某链接返回403无法自动验证(反爬或限流)，浏览器可正常打开。请只给出复核命令，严禁给出删除链接的操作。输出JSON数组，元素含 category,title,language,code，category=link_unverified, language=bash。
+
+
+【第 6 条】link_server_error（5xx 出站链接）→ 截图存为 link_server_error.png
+
+你是华为云运维助手。场景：某出站链接返回5xx，先给浏览器UA复测3次命令确认是否瞬时故障，仅当确为死链才给替换或301示例，不要上来就删。输出JSON数组，元素含 category,title,language,code，category=link_server_error, language=bash。
