@@ -87,7 +87,7 @@
 - [x] `patches[].code` 非空、`category` 在 11 类之内
 - [x] `link_unverified` 仅为复核命令、无删除（控误报铁律）
 - [x] 真实模型（MAAS_MODE=off，deepseek-v4-flash）跑一次，对比 patch 质量差异——已跑通，见 `docs/D5-真实模型脱敏样例.md`
-- [~] 码道 CodeArts 会话留档——**6 类提示词已通过 CLI 全部驱动**（`exit=0`），
-      证据包（提示词+基准补丁+截图清单）见 `docs/codearts-evidence/README.md`；
-      **模型原文截图仍需小甘在客户端补拍并存到 `docs/codearts-evidence/`**
+- [x] 码道 CodeArts 会话留档——**6 类证据截图全部完成**（`docs/codearts-evidence/`：ssl / broken_link / performance / seo / link_unverified / link_server_error）；
+      两条铁律类别（`link_unverified` / `link_server_error`）已逐行放大校验，均**只给复核/复测命令、无删除动作**。
+      提示词 + 基准补丁 + 校对记录见 `docs/codearts-evidence/README.md`，提示词纯文本版 `docs/codearts-evidence/prompts.txt`。
 - [ ] 复扫前后对比：应用补丁→复扫→对应 issue 消失/降级（队长端到端联调）
