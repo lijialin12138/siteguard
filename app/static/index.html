@@ -781,6 +781,7 @@ async function finishVerification(id, s, v) {
   v.after = after;
   v.result = compareScans(v.before, after);
   v.error = '';
+  toast(`复扫完成：原有 ${v.before.issues.length} 项问题，本次发现 ${after.issues.length} 项。请查看前后对比。`);
   await load();
   activeScan = null;
   const row = rows.find((r) => r.site_id === id);
@@ -796,7 +797,9 @@ async function verifyFix(id) {
   const v = { before, afterId: null, after: null, result: null, error: '' };
   s.verification = v;
   s.verifying = true;
+  s.scanError = '';
   activeScan = id;
+  toast('正在重新巡检并验证修复，请稍候。');
   render();
   try {
     const result = await api('/api/sites/' + id + '/scan', { method: 'POST' }, 180000);
