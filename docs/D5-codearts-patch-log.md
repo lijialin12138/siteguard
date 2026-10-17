@@ -67,6 +67,6 @@
 - [x] MOCK 模式返回合法 `patches`（无 Key 也能演示闭环）—— `diagnose_demo.py` 已验证
 - [x] `patches[].code` 非空、`category` 在 11 类之内
 - [x] `link_unverified` 仅为复核命令、无删除（控误报铁律）
-- [ ] 真实模型（MAAS_MODE=off，deepseek-v4-flash）跑一次，对比 patch 质量差异——待队长 Key
+- [x] 真实模型（MAAS_MODE=off，deepseek-v4-flash）跑一次，对比 patch 质量差异——已跑通，见 `docs/D5-真实模型脱敏样例.md`
 - [ ] 码道 CodeArts 会话日志截图留档——**需小甘在码道客户端补跑**（本机缺 `D:\CodeArts Agent\`）
 - [ ] 复扫前后对比：应用补丁→复扫→对应 issue 消失/降级（队长端到端联调）
