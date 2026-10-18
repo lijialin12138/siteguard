@@ -232,13 +232,19 @@ async def api_scan_patch(scan_id: int):
         raise HTTPException(400, "请先调用 /diagnose 生成 AI 诊断结论")
 
     result = diagnosis["result"] or {}
+    meta = result.get("_meta") or {}
+    patches = service.extract_patches(result)   # 统一后的结构化补丁列表
+    # 真实模型直出时已把校验结果存进 _meta；历史记录 / 模拟模式没有存盘，这里对最终补丁再兜底校验一次。
+    # 铁律告警必须透出到前端，否则「安全网」是隐形的（用户复制走违规补丁却看不到提示）。
+    warnings = list(meta.get("patch_warnings") or []) or ai.validate_patches(patches)
     return {
         "scan_id": scan_id,
         "site_id": scan.get("site_id"),
         "diagnosis_id": diagnosis["id"],
-        "model": (result.get("_meta") or {}).get("model"),
+        "model": meta.get("model"),
         "severity": result.get("severity"),
         "summary": result.get("summary", ""),
-        "patches": service.extract_patches(result),   # 统一后的结构化补丁列表
-        "patch": result.get("patch", ""),             # 兼容字段：原始单段字符串
+        "patches": patches,                          # 统一后的结构化补丁列表
+        "patch": result.get("patch", ""),            # 兼容字段：原始单段字符串
+        "patch_warnings": warnings,                  # 铁律校验告警（空列表=全部通过）
     }

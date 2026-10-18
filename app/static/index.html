@@ -108,6 +108,9 @@
   .patch-card{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;}
   .patch-card h4{margin:0;font-size:13px;color:var(--ink);}.patch-card pre{max-height:220px;margin-bottom:6px;}
   .patch-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+  .patch-warn{border:1px solid #f0e0bf;border-radius:8px;padding:10px 12px;margin:10px 0;background:var(--warn-bg);color:var(--warn);font-size:12.5px;}
+  .patch-warn b{display:block;margin-bottom:4px;}
+  .patch-warn ul{margin:0;padding-left:18px;}.patch-warn li{overflow-wrap:anywhere;}
   .verification{border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:12px;background:var(--bg);}
   .comparison-list{padding-left:18px;}.comparison-list li{margin:7px 0;overflow-wrap:anywhere;}
   .comparison-list .resolved{color:var(--ok);}.comparison-list .remaining,.comparison-list .worsened{color:var(--bad);}
@@ -230,7 +233,8 @@ let trendError = '';
 let trendHistory = null;
 let chartLibraryPromise = null;
 let trendChart = null;
-const ECHARTS_URL = 'https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js';
+// 本地打包 ECharts 6.0.0（Apache-2.0），不依赖外网 CDN —— 答辩/演示现场断网也能出图
+const ECHARTS_URL = '/static/vendor/echarts.min.js';
 
 function toast(msg) { $('toast').textContent = msg; }
 function esc(s) {
@@ -332,11 +336,11 @@ async function loadStatus() {
 function stateFor(row) {
   let state = siteStates.get(row.site_id);
   if (!state) {
-    state = { scanId: row.scan_id, expanded: false, issues: null, links: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '', deleting: false, scanError: '', patches: null, patchLoading: false, patchError: '', patchRequest: 0, adviceExpanded: false, verifying: false, verification: null, copyStatus: '', manualCopy: null };
+    state = { scanId: row.scan_id, expanded: false, issues: null, links: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '', deleting: false, scanError: '', patches: null, patchWarnings: [], patchLoading: false, patchError: '', patchRequest: 0, adviceExpanded: false, verifying: false, verification: null, copyStatus: '', manualCopy: null };
     siteStates.set(row.site_id, state);
   } else if (state.scanId !== row.scan_id) {
     // 明细与诊断绑定巡检记录；新巡检不能继续显示旧记录的结论。
-    Object.assign(state, { scanId: row.scan_id, issues: null, links: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '', patches: null, patchLoading: false, patchError: '', patchRequest: state.patchRequest + 1, copyStatus: '', manualCopy: null });
+    Object.assign(state, { scanId: row.scan_id, issues: null, links: null, loading: false, error: '', diagnosis: null, diagnosing: false, diagnosisError: '', patches: null, patchWarnings: [], patchLoading: false, patchError: '', patchRequest: state.patchRequest + 1, copyStatus: '', manualCopy: null });
     if (!state.verifying) state.verification = null;
   }
   return state;
@@ -655,12 +659,18 @@ function renderAdvice() {
     ${renderVerification(row, s)}${renderPatches(row, s)}`;
 }
 
+function renderPatchWarnings(s) {
+  const list = Array.isArray(s.patchWarnings) ? s.patchWarnings : [];
+  if (!list.length) return '';
+  return `<div class="patch-warn" role="alert"><b>铁律校验提示 · ${list.length} 条</b><ul>${list.map((w) => `<li>${esc(w)}</li>`).join('')}</ul><span>以上为自动校验发现的风险项，复制前请人工复核；含删除类命令的补丁不要直接执行。</span></div>`;
+}
+
 function renderPatches(row, s) {
   if (s.patchLoading) return '<p role="status">正在读取修复片段…</p>';
   if (s.patchError) return `<div class="inline-error" role="alert"><p>读取修复片段失败：${esc(s.patchError)}</p><button onclick="loadPatches(${row.site_id})">重试读取补丁</button></div>`;
   if (s.patches === null) return '';
   if (!s.patches.length) return '<p class="sub">本次无需代码修改。若仍有问题，请按处理建议排查。</p>';
-  return `<h3 style="font-size:13px;margin-bottom:0">修复片段 · ${s.patches.length} 段</h3>${s.patches.map((p, index) => `<section class="patch-card"><div class="patch-heading"><h4>${esc(p.title || '修复片段')}</h4><button onclick="copyPatch(${row.site_id}, ${row.scan_id}, ${index})" aria-label="复制修复片段 ${index + 1}">一键复制</button></div><span class="sub">${esc(p.category || '未分类')} · ${esc(p.language || '纯文本')}</span><pre><code>${esc(p.code)}</code></pre></section>`).join('')}
+  return `${renderPatchWarnings(s)}<h3 style="font-size:13px;margin-bottom:0">修复片段 · ${s.patches.length} 段</h3>${s.patches.map((p, index) => `<section class="patch-card"><div class="patch-heading"><h4>${esc(p.title || '修复片段')}</h4><button onclick="copyPatch(${row.site_id}, ${row.scan_id}, ${index})" aria-label="复制修复片段 ${index + 1}">一键复制</button></div><span class="sub">${esc(p.category || '未分类')} · ${esc(p.language || '纯文本')}</span><pre><code>${esc(p.code)}</code></pre></section>`).join('')}
     <p role="status" aria-live="polite">${esc(s.copyStatus)}</p>${s.manualCopy !== null ? `<label for="manualCopy-${row.site_id}">浏览器未允许自动复制，请选中下方原文手动复制：</label><textarea class="manual-copy" id="manualCopy-${row.site_id}" readonly>${esc(s.manualCopy)}</textarea>` : ''}`;
 }
 
@@ -680,6 +690,7 @@ async function loadPatches(id, optional = false) {
     if (result.patches.some((p) => !p || typeof p.code !== 'string' || !p.code.trim())) throw new Error('补丁正文为空或格式不正确，请重新诊断后再试。');
     if (siteStates.get(id) !== s || s.scanId !== scanId || request !== s.patchRequest) return;
     s.patches = result.patches;
+    s.patchWarnings = Array.isArray(result.patch_warnings) ? result.patch_warnings.map(String) : [];
     s.copyStatus = '';
     s.manualCopy = null;
     if (!s.diagnosis) s.diagnosis = { summary: result.summary, severity: result.severity, _meta: { model: result.model } };
@@ -919,11 +930,11 @@ function ensureCharts() {
       if (error) { script.remove(); reject(error); }
       else resolve(window.echarts);
     };
-    const timer = setTimeout(() => finish(new Error('图表组件加载超时，请检查网络后重试。')), 15000);
+    const timer = setTimeout(() => finish(new Error('图表组件加载超时，请刷新页面重试。')), 15000);
     script.src = ECHARTS_URL;
     script.async = true;
     script.onload = () => finish(window.echarts ? null : new Error('图表组件未能初始化，请重试。'));
-    script.onerror = () => finish(new Error('图表组件加载失败，请检查网络后重试。'));
+    script.onerror = () => finish(new Error('图表组件加载失败（本地 /static/vendor/echarts.min.js 未能加载），请刷新页面重试。'));
     document.head.appendChild(script);
   }).catch((error) => { chartLibraryPromise = null; throw error; });
   return chartLibraryPromise;

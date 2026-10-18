@@ -423,6 +423,15 @@ def _validate_patches(patches: object) -> list[str]:
     return problems
 
 
+def validate_patches(patches: object) -> list[str]:
+    """公开入口：对最终补丁做铁律兜底校验（供 /patch 接口使用）。
+
+    模型直出时会顺手校验并存入 _meta；但历史记录、模拟模式没有存盘校验结果，
+    所以接口层再用这个入口复核一遍，保证「告警不隐形」。
+    """
+    return _validate_patches(patches)
+
+
 def _mock_diagnose(report: dict) -> dict:
     """基于规则问题清单给出一份模拟诊断结论（含结构化 patches 补丁）。"""
     issues = sorted(
