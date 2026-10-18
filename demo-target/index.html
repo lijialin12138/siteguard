@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>华电示例学院 - 演示靶站</title>
+  <!-- 注意：这里故意没有写 meta description，用来演示「SEO 缺陷」 -->
+</head>
+<body>
+  <h1>欢迎来到 SiteGuard 演示靶站</h1>
+  <p>这是一个只为演示「扫描 → 诊断 → 出补丁 → 修复 → 复扫」闭环而存在的本地页面。</p>
+
+  <!-- 故意：图片没有 alt 属性，用来演示「无障碍缺陷」 -->
+  <img src="/banner.png">
+
+  <h2>站内链接</h2>
+  <ul>
+    <li><a href="/about.html">关于我们（正常链接，演示健康状态）</a></li>
+    <li><a href="/missing-page.html">新生报名入口（已失效，演示 404 死链）</a></li>
+    <li><a href="/boom">内部统计接口（异常，演示 5xx 服务端错误）</a></li>
+  </ul>
+
+  <p>你可以放心修改这个页面——它只跑在你自己电脑的 127.0.0.1 上，不对外，也不属于任何真实网站。</p>
+</body>
+</html>
